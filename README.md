@@ -100,14 +100,39 @@ aml_txnmonitoring_agents/
 
 The system includes the following main data models:
 
-- `Institution`: Financial institutions with their core attributes
-- `Subsidiary`: Related entities owned by institutions
-- `RiskAssessment`: Risk evaluation records
-- `ComplianceEvent`: Compliance-related activities and changes
-- `BeneficialOwner`: Ultimate beneficial ownership information
-- `AuthorizedPerson`: Individuals with authorization rights
-- `Document`: Required documentation and verifications
-- `Account`: Financial account information
+- **Institution**: Core financial institution data
+- **Subsidiary**: Related subsidiary entities
+- **Account**: Financial accounts with currency and custodian relationships
+- **BeneficialOwner**: Ultimate beneficial owners with nationality and residence info
+- **AuthorizedPerson**: Authorized signatories and key personnel
+- **Address**: Physical location information
+- **Document**: Identity and regulatory documents
+- **JurisdictionPresence**: Regulatory presence in different jurisdictions
+- **RiskAssessment**: Risk evaluation records
+- **ComplianceEvent**: Compliance-related events and actions
+
+## Neo4j Graph Structure
+
+The system maintains the following key relationships in Neo4j:
+
+### Entity Relationships
+- Institution/Subsidiary `-[HAS_ACCOUNT]->` Account
+- Institution/Subsidiary `-[HAS_ADDRESS]->` Address
+- Institution/Subsidiary `-[HAS_DOCUMENT]->` Document
+- Institution/Subsidiary `-[HAS_JURISDICTION_PRESENCE]->` JurisdictionPresence
+
+### Country-Based Relationships
+- Institution `-[INCORPORATED_IN]->` Country
+- Address `-[LOCATED_IN]->` Country
+- JurisdictionPresence `-[PRESENT_IN]->` Country
+- BeneficialOwner `-[RESIDES_IN]->` Country
+- BeneficialOwner `-[CITIZEN_OF]->` Country
+- Account `-[CUSTODIED_IN]->` Country
+
+### Financial Relationships
+- Account `-[DENOMINATED_IN]->` Currency
+- BeneficialOwner `-[RELATED_TO]->` BeneficialOwner
+- Address `-[NEAR]->` Address (for geographically close addresses)
 
 ## Development
 
@@ -118,11 +143,15 @@ The system includes the following main data models:
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contact
+
+For questions and feedback, please open an issue on GitHub.

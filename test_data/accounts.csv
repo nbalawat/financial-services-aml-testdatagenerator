@@ -1,12 +1,19 @@
-account_id,entity_id,entity_type,account_type,account_number,currency,status,opening_date,last_activity_date,balance,risk_rating,purpose,average_monthly_balance,custodian_bank,account_officer
-cb346600-7645-49b5-b186-7c213534914b,54d2b617-0ad4-40a6-a31a-5a706c49aa8f,institution,investment,743151046,EUR,closed,2023-06-12,2024-10-23,652255.53,low,operational,109190.85,"Martin, Wells and Chavez",Alexandra Kennedy
-edf8e43b-0ffe-4f2d-a0af-878af7ebf6da,54d2b617-0ad4-40a6-a31a-5a706c49aa8f,institution,loan,260269826,GBP,active,2023-08-10,2024-11-15,103908.2,medium,operational,699593.48,Bowers PLC,James Herring
-0f3e39ee-4e77-4ced-83fb-a3c4d0584e71,86c806cf-d44c-48ad-8d3e-6fb74b5efac0,institution,current,857953350,EUR,closed,2023-07-11,2024-11-05,431865.88,low,operational,209308.03,,Erica Hernandez
-bbb5f3da-d118-4138-be3a-1427f87726bd,86c806cf-d44c-48ad-8d3e-6fb74b5efac0,institution,loan,634870854,HKD,closed,2023-07-26,2024-07-08,762943.0,medium,settlement,808297.95,,Maria Solomon
-2cafc454-ca51-46c1-b34e-f8cab0491472,dd5bae72-556d-4835-b95c-ed25945f0061,subsidiary,savings,578658035,AUD,active,2023-07-07,2024-11-12,468696.38,low,investment,577169.08,Hunt LLC,Trevor Foster
-95f6cc0f-beb2-4060-a8c2-3ce58ccf5d05,f1a68e4c-5a17-4ff3-8bd7-6539502080ae,subsidiary,loan,171279267,USD,active,2024-07-01,2024-07-23,467622.05,medium,settlement,930767.6,Paul and Sons,
-07865eaa-b313-4db0-ba53-c330bf031995,9e673626-f555-491e-902a-779aa3cbdb38,subsidiary,current,824194130,HKD,active,2023-01-26,2023-08-14,705621.13,low,business,797404.3,,
-1ff4dbf7-c5d3-48f5-801a-14400e4edd84,50734548-1260-4eb7-871a-bb9dbb7026ff,subsidiary,savings,577580465,CAD,closed,2024-10-21,2024-11-11,571897.58,low,business,899259.67,,Jason Jordan
-18ce9a97-1c8e-428e-b929-b6ac683ebf06,74404492-f41b-4db6-8d2b-4e9990a5cd81,subsidiary,savings,572418904,HKD,dormant,2023-03-08,2024-09-17,681683.78,medium,investment,73927.27,,
-05106883-32d5-47ea-a965-b779f6ec68e2,d7532a1d-316c-482e-adb3-7d3a832e0803,subsidiary,investment,814723892,CAD,closed,2024-04-25,2024-05-22,972364.8,low,operational,565822.71,"Graves, Osborn and Hammond",
-9f9f79b3-fee3-4b18-8517-bcd5e6cb4521,d7532a1d-316c-482e-adb3-7d3a832e0803,subsidiary,loan,692275587,EUR,closed,2023-10-06,2024-05-13,202756.65,medium,investment,187483.2,,
+account_id,entity_id,entity_type,account_type,account_number,currency,status,opening_date,last_activity_date,balance,risk_rating,purpose,average_monthly_balance,custodian_bank,account_officer,custodian_country
+a9ed9186-75e9-42fd-9924-fdeda2466012,4155a004-aad5-4658-8ba2-b8eae8165229,institution,savings,878815622,GBP,closed,2023-11-12,2023-12-26,150327.78,low,settlement,129873.8,"Peterson, Williams and Riggs",,BZ
+f1c64cf6-606a-49ba-9bd2-b295b2c47ed2,4155a004-aad5-4658-8ba2-b8eae8165229,institution,current,491273604,EUR,active,2024-12-22,2024-12-22,528316.74,low,settlement,846795.57,Perkins PLC,,VE
+062fb750-fc23-4647-b15c-d02d40bce1ac,d70c5c8b-8e58-4bdb-8d57-f8dce7daf227,institution,loan,209816264,CAD,closed,2023-12-28,2024-09-20,564994.63,low,operational,680852.71,,Robert Smith,MM
+2e3f528f-c5ff-4b46-b039-f3115277dfd1,d70c5c8b-8e58-4bdb-8d57-f8dce7daf227,institution,investment,707295347,AUD,closed,2024-09-10,2024-09-23,979433.62,high,operational,976263.9,,,
+1a74065a-dd4a-40f9-835d-330c2632b6bf,d70c5c8b-8e58-4bdb-8d57-f8dce7daf227,institution,investment,187428109,JPY,active,2023-08-08,2023-08-13,256914.08,high,settlement,486103.97,,Paige Riggs,
+df9ac0ff-d363-4d69-9be2-ee744ddbb99c,a2ff602d-65e2-418b-bfec-a39a84e4fc10,subsidiary,loan,875915135,CAD,closed,2023-12-28,2024-11-01,411806.57,medium,operational,632263.65,Henry-Banks,,HK
+0cdadcc2-282d-48ef-918a-77ad9e0d88bc,b83c736d-a641-47c9-b2bd-f291ad22dd12,subsidiary,loan,268811443,EUR,closed,2024-09-25,2024-12-02,746363.38,low,business,155033.73,,Michael Hill,
+95c3e5ca-6ac2-4278-aa7e-3dd67fec05e6,b83c736d-a641-47c9-b2bd-f291ad22dd12,subsidiary,loan,237493596,EUR,closed,2024-07-18,2024-11-04,245464.34,high,operational,747026.64,Liu-Cain,,
+a4ec0d8d-d33a-47f2-a5c3-8b563d8aa91d,b83c736d-a641-47c9-b2bd-f291ad22dd12,subsidiary,current,052282121,USD,active,2024-09-16,2024-12-02,400926.54,medium,operational,99182.92,Mays Group,Katherine Snyder,
+4a237cea-c12a-4914-983f-f56625b8c355,ec2141e0-230b-4f1f-900d-a8a0f5f86338,subsidiary,current,781165989,SGD,dormant,2023-04-13,2023-10-30,85866.79,low,investment,177136.19,Phelps Ltd,Claire Clay,
+5f44cf02-a05c-4ea3-8cc8-35dd6b419f4b,ec2141e0-230b-4f1f-900d-a8a0f5f86338,subsidiary,current,480653990,CHF,dormant,2023-09-12,2024-08-24,340500.33,medium,business,328028.74,,Barbara Riley,
+9186e4ad-13b4-4f93-b9e0-77285c64ead2,9eeb095a-dfe9-4bff-bde8-2ac789c02494,subsidiary,loan,789472787,CAD,closed,2024-12-15,2024-12-21,274487.27,low,business,819159.3,,,TC
+bbce8cd7-d762-4dde-ad2d-8784b48bab3a,2ba1d402-d03e-4214-bc18-9090d2aa4365,subsidiary,current,475167171,EUR,dormant,2023-06-23,2024-06-28,547983.58,medium,operational,742072.14,Hebert Group,Julia Newton,AU
+5e2d1548-72e5-4bb9-93ae-a5f2838fcb96,c6840605-818f-41bb-93d5-e6c34fbfa42b,subsidiary,loan,408280185,CAD,dormant,2024-09-13,2024-10-31,105904.82,low,operational,574644.24,,,FR
+b8062a12-406e-4114-b540-6acc3b98d346,c6840605-818f-41bb-93d5-e6c34fbfa42b,subsidiary,current,164868599,EUR,active,2023-04-05,2024-06-18,859728.83,medium,business,345762.82,,Barbara Castaneda,US
+5e2fa050-59bb-4f3a-a44d-df3a5783d269,0c0e0f9e-e1c2-4be8-92f6-4f6de0750b78,subsidiary,investment,833799586,GBP,dormant,2024-07-26,2024-11-09,434601.77,medium,settlement,799158.61,,,AU
+e1981b50-2a8e-441c-a511-b69db7bfa766,0c0e0f9e-e1c2-4be8-92f6-4f6de0750b78,subsidiary,current,421752322,CHF,closed,2024-10-14,2024-11-28,634134.1,medium,business,930227.51,Day-Smith,,
+f178c29b-2f23-4b1d-ba59-30f3d091b1fa,0c0e0f9e-e1c2-4be8-92f6-4f6de0750b78,subsidiary,loan,303143762,JPY,dormant,2023-11-16,2024-11-11,452109.52,low,operational,421266.43,,,

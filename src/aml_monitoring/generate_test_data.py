@@ -393,7 +393,8 @@ class TestDataGenerator:
                     purpose=random.choice(['business', 'investment', 'operational', 'settlement']),
                     average_monthly_balance=round(random.uniform(1000, 1000000), 2),
                     custodian_bank=fake.company() if random.random() > 0.5 else None,
-                    account_officer=fake.name() if random.random() > 0.5 else None
+                    account_officer=fake.name() if random.random() > 0.5 else None,
+                    custodian_country=random.choice(self.COUNTRIES) if random.random() > 0.5 else None
                 )
                 accounts.append(self._validate_and_convert_to_dict(account))
             except Exception as e:

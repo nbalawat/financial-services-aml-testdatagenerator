@@ -280,6 +280,7 @@ class Account(BaseModel):
     average_monthly_balance: Optional[float] = None
     custodian_bank: Optional[str] = None
     account_officer: Optional[str] = None
+    custodian_country: Optional[str] = None
 
 class SubsidiaryRelationship(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
