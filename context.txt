@@ -1,0 +1,9 @@
+The project is related customers of a large bank and their transactions and the alerts they would generate.  Banks are usually faced with 
+
+This is related to institutions like Hedge funds, Asset Management firms, Banks, Corporations etc
+
+These organizations typically do asset movements - ACH, wires, Deposits, Credit Card Payments and also transact in the capital markets.
+
+A surveillance engine usually monitors their asset movements and generates alerts
+
+These alerts are investigated over several steps by human beings and if there is an investigation they would raise a case and file suspicious activity report

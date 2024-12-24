@@ -1,0 +1,188 @@
+No data to save for erDiagram
+    INSTITUTION ||--o{ SUBSIDIARY : "owns"
+    INSTITUTION ||--o{ ACCOUNT : "maintains"
+    INSTITUTION ||--o{ RISK_ASSESSMENT : "undergoes"
+    INSTITUTION ||--o{ BENEFICIAL_OWNER : "has"
+    INSTITUTION ||--o{ AUTHORIZED_PERSON : "has"
+    INSTITUTION ||--o{ DOCUMENT : "provides"
+    INSTITUTION ||--o{ ADDRESS : "has"
+    INSTITUTION ||--o{ JURISDICTION_PRESENCE : "operates_in"
+    
+    SUBSIDIARY ||--o{ ACCOUNT : "maintains"
+    SUBSIDIARY ||--o{ ADDRESS : "has"
+    SUBSIDIARY ||--o{ RISK_ASSESSMENT : "undergoes"
+    SUBSIDIARY ||--|| JURISDICTION_PRESENCE : "operates_in"
+    SUBSIDIARY ||--o{ SUBSIDIARY_RELATIONSHIP : "has"
+    
+    INSTITUTION {
+        string institution_id PK
+        string legal_name
+        string tax_id
+        string incorporation_country
+        date incorporation_date
+        string business_type "hedge_fund|bank|asset_mgmt|corporation"
+        string primary_business_activity
+        string regulatory_status
+        string primary_regulator
+        string[] licenses
+        money annual_revenue
+        int employee_count
+        string risk_rating
+        string aml_program_status
+        string customer_status
+        date onboarding_date
+        date last_review_date
+        string relationship_manager
+        string swift_code
+        string lei_code
+        json industry_codes
+        string website
+    }
+
+    SUBSIDIARY {
+        string subsidiary_id PK
+        string parent_institution_id FK
+        string legal_name
+        string tax_id
+        string incorporation_country
+        date incorporation_date
+        string business_type
+        string operational_status "active|dormant|liquidating"
+        float parent_ownership_percentage
+        string consolidation_status "consolidated|unconsolidated"
+        money capital_investment
+        string functional_currency
+        bool material_subsidiary
+        string risk_classification
+        string regulatory_status
+        json local_licenses
+        date acquisition_date
+        string integration_status
+        json financial_metrics
+        string reporting_frequency
+        bool requires_local_audit
+        string corporate_governance_model
+    }
+
+    SUBSIDIARY_RELATIONSHIP {
+        string relationship_id PK
+        string subsidiary_id FK
+        string related_subsidiary_id FK
+        string relationship_type "sister|operational|service"
+        string nature_of_business
+        json service_agreements
+        money annual_transaction_volume
+        string transfer_pricing_model
+        date relationship_start
+        string approval_status
+        json risk_factors
+    }
+
+    ADDRESS {
+        string address_id PK
+        string entity_id FK "institution_id or subsidiary_id"
+        string entity_type "institution|subsidiary"
+        string address_type
+        string address_line1
+        string address_line2
+        string city
+        string state_province
+        string postal_code
+        string country
+        string status
+        date effective_from
+        date effective_to
+        bool primary_address
+        string validation_status
+        date last_verified
+        json geo_coordinates
+        string timezone
+    }
+
+    JURISDICTION_PRESENCE {
+        string presence_id PK
+        string entity_id FK "institution_id or subsidiary_id"
+        string entity_type "institution|subsidiary"
+        string jurisdiction
+        string presence_type
+        string regulatory_status
+        string[] local_licenses
+        date establishment_date
+        string local_regulator
+        string compliance_status
+        json reporting_requirements
+        string supervisory_authority
+        bool material_entity_flag
+    }
+
+    ACCOUNT {
+        string account_id PK
+        string entity_id FK "institution_id or subsidiary_id"
+        string entity_type "institution|subsidiary"
+        string account_type
+        string currency
+        string status
+        date opening_date
+        string purpose
+        money average_monthly_balance
+        string custodian_bank
+        bool high_risk_flag
+        json trading_limits
+        json authorized_markets
+        string account_officer
+    }
+
+    RISK_ASSESSMENT {
+        string assessment_id PK
+        string entity_id FK "institution_id or subsidiary_id"
+        string entity_type "institution|subsidiary"
+        date assessment_date
+        string risk_score
+        string assessment_type
+        json risk_factors
+        string conducted_by
+        string approved_by
+        text findings
+        date next_review_date
+    }
+
+    BENEFICIAL_OWNER {
+        string owner_id PK
+        string institution_id FK
+        string full_name
+        date dob
+        string nationality
+        float ownership_percentage
+        string pep_status
+        string identification_type
+        string identification_number
+        date verification_date
+        string verification_source
+    }
+
+    AUTHORIZED_PERSON {
+        string auth_person_id PK
+        string institution_id FK
+        string full_name
+        string title
+        string role
+        string[] permissions
+        date authorization_start
+        date authorization_end
+        string status
+        json contact_details
+        string verification_status
+    }
+
+    DOCUMENT {
+        string document_id PK
+        string institution_id FK
+        string document_type
+        string file_reference
+        date submission_date
+        date expiry_date
+        string verification_status
+        string verified_by
+        date verification_date
+        string document_category
+    }
