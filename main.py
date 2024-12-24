@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import os
+import asyncio
 import argparse
 from dotenv import load_dotenv
 from aml_monitoring.generate_test_data import TestDataGenerator
 from aml_monitoring.db_handlers import DatabaseManager
 
-def main():
+async def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='AML Transaction Monitoring Data Generator')
     parser.add_argument('--num-institutions', type=int, default=2,
@@ -20,13 +21,18 @@ def main():
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
 
-    print("Cleaning up PostgreSQL database...")
+    # Initialize database handlers
+    print("Initializing database connections...")
     db_manager = DatabaseManager()
-    db_manager.cleanup_postgres()
+    await db_manager.initialize_postgres()
+    await db_manager.neo4j_handler.initialize()
+
+    print("Cleaning up PostgreSQL database...")
+    await db_manager.cleanup_postgres()
     print("Successfully cleaned up PostgreSQL database")
 
     print("Cleaning up Neo4j database...")
-    db_manager.cleanup_neo4j()
+    await db_manager.cleanup_neo4j()
     print("Successfully cleaned up Neo4j database")
 
     print("Generating test data...")
@@ -34,7 +40,7 @@ def main():
     
     # Generate data
     generator = TestDataGenerator()
-    data = generator.generate_all_data(args.num_institutions)
+    data = await generator.generate_all_data(args.num_institutions)
 
     # Save to CSV files
     print("\nSaving to CSV files...")
@@ -46,12 +52,16 @@ def main():
 
     # Save to databases
     print("\nSaving to PostgreSQL...")
-    db_manager.save_to_postgres(data)
+    await db_manager.save_to_postgres(data)
 
     print("\nSaving to Neo4j...")
-    db_manager.save_to_neo4j(data)
+    await db_manager.save_to_neo4j(data)
+
+    # Close database connections
+    await db_manager.postgres_handler.close()
+    await db_manager.neo4j_handler.close()
 
     print("\nData generation and saving complete!")
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

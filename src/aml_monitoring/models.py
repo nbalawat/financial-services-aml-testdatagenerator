@@ -355,3 +355,58 @@ class Customer(BaseModel):
     reporting_requirements: Dict[str, Union[str, List[str]]]
     supervisory_authority: str
     material_customer_flag: bool
+
+class TransactionType(str, Enum):
+    ACH = 'ach'
+    WIRE = 'wire'
+    CHECK = 'check'
+    LOCKBOX = 'lockbox'
+
+class TransactionStatus(str, Enum):
+    COMPLETED = 'completed'
+    PENDING = 'pending'
+    FAILED = 'failed'
+    REVERSED = 'reversed'
+
+class Transaction(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    transaction_id: str
+    transaction_type: TransactionType
+    transaction_date: str
+    amount: float
+    currency: str
+    status: TransactionStatus
+    is_debit: bool  # True if money is going out, False if coming in
+    
+    # Account information
+    account_id: str  # The account in our system
+    counterparty_account: str
+    counterparty_name: str
+    counterparty_bank: str
+    
+    # Entity tracking
+    entity_id: str  # The entity (institution/subsidiary) that owns the account
+    entity_type: str  # 'institution' or 'subsidiary'
+    counterparty_entity_name: str
+    
+    # Country information
+    originating_country: str
+    destination_country: str
+    
+    # Transaction details
+    purpose: str
+    reference_number: str
+    
+    # Risk-related fields
+    screening_alert: bool = False
+    alert_details: Optional[str] = None
+    risk_score: Optional[int] = None  # 1-100
+    
+    # Additional metadata
+    processing_fee: Optional[float] = None
+    exchange_rate: Optional[float] = None
+    value_date: Optional[str] = None
+    batch_id: Optional[str] = None  # For ACH/Lockbox batches
+    check_number: Optional[str] = None  # For check payments
+    wire_reference: Optional[str] = None  # For wire transfers
