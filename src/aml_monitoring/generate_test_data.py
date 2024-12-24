@@ -20,7 +20,17 @@ class TestDataGenerator:
     # Business constants
     BUSINESS_TYPES = [bt.value for bt in BusinessType]
     OPERATIONAL_STATUSES = [os.value for os in OperationalStatus]
-    COUNTRIES = ['US', 'UK', 'CA', 'DE', 'FR', 'JP', 'AU', 'SG', 'HK', 'CH']
+    # Mix of low-risk and high-risk countries
+    COUNTRIES = [
+        # Low/Medium Risk Countries
+        'US', 'UK', 'CA', 'DE', 'FR', 'JP', 'AU', 'SG', 'HK', 'CH',
+        # High Risk Countries - Sanctions
+        'IR', 'KP', 'SY', 'CU', 'VE',
+        # High Risk Countries - AML Concerns
+        'AF', 'MM', 'LA', 'KH', 'YE',
+        # High Risk Countries - Tax Havens
+        'KY', 'VG', 'TC', 'BZ', 'PA'
+    ]
     CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'SGD', 'HKD']
     RISK_RATINGS = [rating.value for rating in RiskRating]
 
@@ -88,7 +98,7 @@ class TestDataGenerator:
             )
             return self._validate_and_convert_to_dict(institution)
         except ValueError as e:
-            print(f"Validation error for institution: {e}")
+            print("Validation error for institution: {}".format(e))
             return None
 
     def generate_subsidiaries(self, institution: dict, num_subsidiaries: int) -> List[dict]:
