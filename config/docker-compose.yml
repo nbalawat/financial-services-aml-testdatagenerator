@@ -54,7 +54,7 @@ services:
       - aml_network
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
-      interval: 10s
+      interval: 10slooks like only transactions are getting loaded and nothing else.  
       timeout: 5s
       retries: 5
 

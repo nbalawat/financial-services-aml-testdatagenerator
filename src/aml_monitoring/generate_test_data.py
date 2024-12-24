@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 from typing import Dict, List, Any, Optional, Union
 from faker import Faker
-from enum import Enum
-import asyncio
 import argparse
+import asyncio
+from enum import Enum
 from .models import (
     Institution, Subsidiary, ComplianceEvent, RiskAssessment,
     BeneficialOwner, AuthorizedPerson, Address, Document,
@@ -15,6 +15,7 @@ from .models import (
     ComplianceEventType, OperationalStatus, Customer, Transaction, TransactionType, TransactionStatus
 )
 from .transaction_generator import TransactionGenerator
+from .db_handlers import DatabaseManager
 
 fake = Faker()
 
@@ -50,284 +51,332 @@ class TestDataGenerator:
             print("Error converting model to dictionary: {}".format(e))
             return None
 
-    def generate_institution_data(self) -> dict:
-        """Generate data for a single institution."""
-        fake = Faker()
-        
-        onboarding_date = fake.date_between(start_date='-5y', end_date='today')
-        
-        institution = {
-            'entity_id': str(uuid.uuid4()),
-            'legal_name': fake.company(),
-            'business_type': random.choice(['Bank', 'Credit Union', 'Investment Firm']),
-            'incorporation_country': fake.country_code(),
-            'onboarding_date': datetime.strftime(onboarding_date, '%Y-%m-%d'),
-            'risk_rating': random.randint(1, 100)
-        }
-        
-        return institution
-
     def generate_institutions(self, num_institutions: int) -> List[dict]:
-        """Generate data for multiple institutions."""
+        """Generate financial institutions."""
         institutions = []
-        for _ in range(num_institutions):
-            institution = self.generate_institution_data()
-            if institution:
-                institutions.append(institution)
-        
-        if not institutions:
-            raise ValueError("Failed to generate any valid institutions")
-        
-        print(f"Generated {len(institutions)} institutions")
+        try:
+            for _ in range(num_institutions):
+                # Generate dates in the past
+                today = datetime.now().date()
+                incorporation_date = today - timedelta(days=random.randint(365, 20*365))  # 1-20 years ago
+                onboarding_date = incorporation_date + timedelta(days=random.randint(30, 365))  # 1-12 months after incorporation
+                
+                # Last review date between onboarding and today
+                days_since_onboarding = (today - onboarding_date).days
+                if days_since_onboarding > 0:
+                    random_review_days = random.randint(0, days_since_onboarding)
+                    last_review_date = onboarding_date + timedelta(days=random_review_days)
+                else:
+                    last_review_date = onboarding_date
+                
+                # Generate audit dates
+                last_audit_date = onboarding_date + timedelta(days=random.randint(30, max(days_since_onboarding, 30)))
+                next_audit_date = today + timedelta(days=random.randint(30, 365))  # 1-12 months in future
+                
+                # KYC refresh date between onboarding and today
+                kyc_refresh_date = onboarding_date + timedelta(days=random.randint(0, max(days_since_onboarding, 30)))
+                
+                # Next review date in the future (up to 1 year)
+                next_review_date = today + timedelta(days=random.randint(1, 365))
+                
+                institution = Institution(
+                    institution_id=str(uuid.uuid4()),
+                    legal_name=fake.company(),
+                    incorporation_country=random.choice(self.COUNTRIES),
+                    incorporation_date=incorporation_date.strftime('%Y-%m-%d'),
+                    onboarding_date=onboarding_date.strftime('%Y-%m-%d'),
+                    business_type=random.choice(['bank', 'credit_union', 'investment_firm', 'insurance_company']),
+                    operational_status='active',
+                    primary_currency=random.choice(['USD', 'EUR', 'GBP', 'JPY', 'CHF']),
+                    regulatory_status='regulated',
+                    primary_business_activity=random.choice(['Commercial Banking', 'Investment Banking', 'Asset Management', 'Insurance']),
+                    primary_regulator=random.choice(['SEC', 'FCA', 'FINMA', 'MAS', 'HKMA']),
+                    licenses=['banking_license', 'securities_license'],
+                    aml_program_status='active',
+                    kyc_refresh_date=kyc_refresh_date.strftime('%Y-%m-%d'),
+                    last_audit_date=last_audit_date.strftime('%Y-%m-%d'),
+                    next_audit_date=next_audit_date.strftime('%Y-%m-%d'),
+                    relationship_manager=fake.name(),
+                    relationship_status='active',
+                    swift_code=fake.bothify(text='????##??###'),
+                    lei_code=fake.bothify(text='????????0000########??'),
+                    tax_id=fake.bothify(text='##-#######'),
+                    website=fake.url(),
+                    primary_contact_name=fake.name(),
+                    primary_contact_email=fake.email(),
+                    primary_contact_phone=fake.phone_number(),
+                    annual_revenue=float(random.randint(1000000, 1000000000)),
+                    employee_count=random.randint(100, 10000),
+                    year_established=incorporation_date.year,
+                    customer_status='active',
+                    last_review_date=last_review_date.strftime('%Y-%m-%d'),
+                    next_review_date=next_review_date.strftime('%Y-%m-%d'),
+                    industry_codes=['6021', '6022', '6029'],
+                    public_company=random.choice([True, False]),
+                    risk_rating=random.choice(['low', 'medium', 'high']),
+                    business_description=self._get_business_activity('financial'),
+                    status='active',
+                    notes=fake.text(max_nb_chars=100) if random.random() < 0.3 else None
+                )
+                institutions.append(self._validate_and_convert_to_dict(institution))
+        except Exception as e:
+            print(f"Error in generate_institutions: {e}")
         return institutions
 
     def generate_subsidiaries(self, institutions: List[dict]) -> List[dict]:
         """Generate subsidiaries for institutions."""
         subsidiaries = []
-        for institution in institutions:
-            num_subsidiaries = random.randint(2, 5)
-            for _ in range(num_subsidiaries):
-                subsidiary = {
-                    'entity_id': str(uuid.uuid4()),
-                    'parent_entity_id': institution['entity_id'],
-                    'legal_name': f"{institution['legal_name']} {Faker().company_suffix()}",
-                    'business_type': random.choice(['Subsidiary Bank', 'Trading Desk', 'Investment Vehicle']),
-                    'incorporation_country': Faker().country_code(),
-                    'onboarding_date': institution['onboarding_date'],
-                    'parent_ownership_percentage': random.randint(51, 100)
-                }
-                subsidiaries.append(subsidiary)
-            print(f"Generated {num_subsidiaries} subsidiaries for institution {institution['entity_id']}")
-        
-        print(f"Total subsidiaries generated: {len(subsidiaries)}")
+        try:
+            print(f"Starting subsidiary generation for {len(institutions)} institutions")
+            for institution in institutions:
+                print(f"Processing institution {institution['institution_id']}")
+                num_subsidiaries = random.randint(1, 3)
+                print(f"Attempting to generate {num_subsidiaries} subsidiaries")
+                
+                inst_incorporation = datetime.strptime(institution['incorporation_date'], '%Y-%m-%d').date()
+                print(f"Institution incorporation date: {inst_incorporation}")
+                
+                today = datetime.now().date()
+                days_since_parent_inc = (today - inst_incorporation).days
+                print(f"Days since parent incorporation: {days_since_parent_inc}")
+                
+                if days_since_parent_inc <= 0:
+                    print(f"Warning: Institution incorporation date {inst_incorporation} is in the future")
+                    continue
+                
+                for i in range(num_subsidiaries):
+                    print(f"Generating subsidiary {i+1}/{num_subsidiaries}")
+                    # Generate incorporation date between parent incorporation and today
+                    max_days = min(days_since_parent_inc, 3650)  # Cap at ~10 years
+                    if max_days <= 30:
+                        print(f"Warning: Parent institution too new (only {max_days} days old)")
+                        continue
+                        
+                    incorporation_date = inst_incorporation + timedelta(days=random.randint(30, max_days))
+                    print(f"Generated subsidiary incorporation date: {incorporation_date}")
+                    
+                    # Generate acquisition date after subsidiary incorporation but before today
+                    days_since_incorporation = (today - incorporation_date).days
+                    if days_since_incorporation <= 30:  # Need at least 30 days between incorporation and acquisition
+                        print(f"Warning: Subsidiary incorporation too recent")
+                        continue
+                    
+                    acquisition_date = incorporation_date + timedelta(days=random.randint(30, days_since_incorporation))
+                    print(f"Generated subsidiary acquisition date: {acquisition_date}")
+                    
+                    try:
+                        # Generate financial metrics
+                        financial_metrics = {
+                            'annual_revenue': float(random.randint(1000000, 100000000)),
+                            'total_assets': float(random.randint(5000000, 500000000)),
+                            'net_income': float(random.randint(100000, 10000000)),
+                            'employee_count': random.randint(50, 5000)
+                        }
+                        
+                        # Generate local licenses based on business type
+                        business_type = random.choice(['lending', 'investment', 'insurance', 'payment_processing'])
+                        local_licenses = []
+                        if business_type == 'lending':
+                            local_licenses = ['lending_license', 'consumer_credit_license']
+                        elif business_type == 'investment':
+                            local_licenses = ['investment_advisor_license', 'broker_dealer_license']
+                        elif business_type == 'insurance':
+                            local_licenses = ['insurance_license', 'reinsurance_license']
+                        else:
+                            local_licenses = ['payment_processor_license', 'money_transmitter_license']
+                        
+                        subsidiary = Subsidiary(
+                            subsidiary_id=str(uuid.uuid4()),
+                            parent_institution_id=institution['institution_id'],
+                            legal_name=fake.company(),
+                            tax_id=fake.bothify(text='##-#######'),
+                            incorporation_country=random.choice(self.COUNTRIES),
+                            incorporation_date=incorporation_date.strftime('%Y-%m-%d'),
+                            acquisition_date=acquisition_date.strftime('%Y-%m-%d'),
+                            business_type=business_type,
+                            operational_status='active',
+                            parent_ownership_percentage=round(random.uniform(51, 100), 2),
+                            consolidation_status='consolidated',
+                            capital_investment=float(random.randint(1000000, 50000000)),
+                            functional_currency=random.choice(self.CURRENCIES),
+                            material_subsidiary=random.choice([True, False]),
+                            risk_classification=random.choice(['low', 'medium', 'high']),
+                            regulatory_status='regulated',
+                            local_licenses=local_licenses,
+                            integration_status='integrated',
+                            financial_metrics=financial_metrics,
+                            reporting_frequency='quarterly',
+                            requires_local_audit=True,
+                            corporate_governance_model='board_of_directors',
+                            is_regulated=True,
+                            is_customer=False
+                        )
+                        subsidiary_dict = self._validate_and_convert_to_dict(subsidiary)
+                        if subsidiary_dict:
+                            subsidiaries.append(subsidiary_dict)
+                            print(f"Successfully generated subsidiary {subsidiary_dict['subsidiary_id']}")
+                        else:
+                            print("Failed to validate subsidiary")
+                    except Exception as e:
+                        print(f"Error creating subsidiary: {e}")
+                        continue
+                    
+        except Exception as e:
+            print(f"Error in generate_subsidiaries: {e}")
+            
+        print(f"Generated {len(subsidiaries)} subsidiaries in total")
         return subsidiaries
 
     def generate_addresses(self, entity_id: str, entity_type: str, num_addresses: int) -> List[dict]:
         """Generate addresses for an entity."""
         addresses = []
-        for i in range(num_addresses):
-            try:
+        try:
+            for i in range(num_addresses):
+                # Generate dates in the past 5 years
+                today = datetime.now().date()
+                effective_from = today - timedelta(days=random.randint(0, 5*365))  # Up to 5 years ago
+                
+                # 20% chance of having an effective_to date
+                effective_to = None
+                if random.random() < 0.2:
+                    days_until_today = (today - effective_from).days
+                    if days_until_today > 0:
+                        random_end_days = random.randint(0, days_until_today)
+                        effective_to = effective_from + timedelta(days=random_end_days)
+                
+                # Generate last_verified date between effective_from and today
+                days_since_effective = (today - effective_from).days
+                if days_since_effective > 0:
+                    random_verify_days = random.randint(0, days_since_effective)
+                    last_verified = effective_from + timedelta(days=random_verify_days)
+                else:
+                    last_verified = effective_from
+                
                 address = Address(
                     address_id=str(uuid.uuid4()),
                     entity_id=entity_id,
                     entity_type=entity_type,
-                    address_type=random.choice(['registered', 'business', 'mailing']),
+                    address_type=random.choice(['business', 'mailing', 'registered']),
                     address_line1=fake.street_address(),
-                    address_line2=fake.secondary_address() if random.random() > 0.5 else None,
+                    address_line2=fake.secondary_address() if random.random() < 0.3 else None,
                     city=fake.city(),
                     state_province=fake.state(),
                     postal_code=fake.postcode(),
                     country=random.choice(self.COUNTRIES),
                     status='active',
-                    effective_from=fake.date_between(start_date='-2y', end_date='today').strftime('%Y-%m-%d'),
-                    effective_to=fake.date_between(start_date='today', end_date='+2y').strftime('%Y-%m-%d'),
+                    effective_from=effective_from.strftime('%Y-%m-%d'),
+                    effective_to=effective_to.strftime('%Y-%m-%d') if effective_to else None,
                     primary_address=i == 0,  # First address is primary
-                    validation_status=random.choice(['verified', 'pending', 'failed']),
-                    last_verified=fake.date_between(start_date='-1y', end_date='today').strftime('%Y-%m-%d'),
+                    validation_status='verified',
+                    last_verified=last_verified.strftime('%Y-%m-%d'),
                     geo_coordinates={'latitude': float(fake.latitude()), 'longitude': float(fake.longitude())},
                     timezone=fake.timezone()
                 )
                 addresses.append(self._validate_and_convert_to_dict(address))
-            except Exception as e:
-                print(f"Validation error for address: {e}")
+        except Exception as e:
+            print(f"Error in generate_addresses: {e}")
         return addresses
 
-    def generate_risk_assessments(self, entity_id: str, entity_type: str, num_assessments: int) -> List[dict]:
-        """Generate risk assessments for an entity."""
-        assessments = []
-        for _ in range(num_assessments):
-            assessment_date = fake.date_between(start_date='-1y', end_date='today')
-            try:
-                assessment = RiskAssessment(
-                    assessment_id=str(uuid.uuid4()),
-                    entity_id=entity_id,
-                    entity_type=entity_type,
-                    assessment_date=assessment_date.strftime('%Y-%m-%d'),
-                    risk_rating=random.choices(
-                        [RiskRating.LOW.value, RiskRating.MEDIUM.value, RiskRating.HIGH.value],
-                        weights=[60, 30, 10]
-                    )[0],
-                    risk_score=str(random.randint(1, 100)),
-                    assessment_type=random.choice(['initial', 'periodic', 'triggered']),
-                    risk_factors={
-                        'geographic': random.randint(1, 5),
-                        'product': random.randint(1, 5),
-                        'client': random.randint(1, 5),
-                        'transaction': random.randint(1, 5)
-                    },
-                    conducted_by=fake.name(),
-                    approved_by=fake.name(),
-                    findings=fake.text(max_nb_chars=200),
-                    assessor=fake.name(),
-                    next_review_date=fake.date_between(start_date=assessment_date, end_date='+1y').strftime('%Y-%m-%d'),
-                    notes=fake.text(max_nb_chars=100) if random.random() > 0.5 else None
-                )
-                assessments.append(self._validate_and_convert_to_dict(assessment))
-            except Exception as e:
-                print(f"Error generating risk assessment: {e}")
-        return assessments
-
-    def generate_beneficial_owners(self, entity_id: str, entity_type: str, num_owners: int):
-        beneficial_owners = []
-        for _ in range(num_owners):
-            dob = fake.date_of_birth(minimum_age=30, maximum_age=80)
-            try:
-                owner = BeneficialOwner(
-                    owner_id=str(uuid.uuid4()),
-                    entity_id=entity_id,
-                    entity_type=entity_type,
-                    name=fake.name(),
-                    nationality=random.choice(self.COUNTRIES),
-                    country_of_residence=random.choice(self.COUNTRIES),
-                    ownership_percentage=round(random.uniform(10, 100), 2),
-                    dob=dob.strftime('%Y-%m-%d'),
-                    verification_date=fake.date_between(start_date='-2y', end_date='today').strftime('%Y-%m-%d'),
-                    pep_status=random.choice([True, False]),
-                    sanctions_status=random.choice([True, False]),
-                    adverse_media_status=random.choice([True, False]),
-                    verification_source=random.choice(['document_verification', 'database_check', 'third_party_provider']),
-                    notes=fake.text(max_nb_chars=200) if random.random() > 0.5 else None
-                )
-                beneficial_owners.append(self._validate_and_convert_to_dict(owner))
-            except ValueError as e:
-                print(f"Validation error for beneficial owner: {e}")
-                continue
-
-        return beneficial_owners
-
-    def generate_authorized_persons(self, entity_id: str, entity_type: str, num_persons: int):
-        authorized_persons = []
-        for _ in range(num_persons):
-            auth_start = fake.date_between(start_date='-5y', end_date='today')
-            try:
-                authorized_person = AuthorizedPerson(
-                    person_id=str(uuid.uuid4()),
-                    entity_id=entity_id,
-                    entity_type=entity_type,
-                    name=fake.name(),
-                    title=random.choice(['Director', 'CFO', 'Treasurer', 'Controller', 'VP Finance']),
-                    authorization_level=random.choice(['primary', 'secondary', 'tertiary']),
-                    authorization_type=random.choice(['full', 'limited', 'view_only']),
-                    authorization_start=auth_start.strftime('%Y-%m-%d'),
-                    authorization_end=fake.date_between(start_date='+1y', end_date='+5y').strftime('%Y-%m-%d') if random.random() > 0.8 else None,
-                    contact_info={
-                        'email': fake.email(),
-                        'phone': fake.phone_number(),
-                        'office_location': fake.city()
-                    },
-                    is_active=True,
-                    last_verification_date=fake.date_between(start_date='-1y', end_date='today').strftime('%Y-%m-%d')
-                )
-                authorized_persons.append(self._validate_and_convert_to_dict(authorized_person))
-            except ValueError as e:
-                print(f"Validation error for authorized person: {e}")
-                continue
+    def generate_beneficial_owners(self, entity_id: str, entity_type: str, num_owners: int) -> List[dict]:
+        """Generate beneficial owners for an entity."""
+        owners = []
+        total_ownership = 100.0
         
-        return authorized_persons
+        for i in range(num_owners):
+            # For the last owner, assign remaining ownership
+            if i == num_owners - 1:
+                ownership = total_ownership
+            else:
+                # Generate random ownership ensuring we don't exceed 100%
+                max_ownership = min(75.0, total_ownership - (num_owners - i - 1) * 5.0)  # Leave at least 5% for others
+                ownership = round(random.uniform(5.0, max_ownership), 2)
+                total_ownership -= ownership
+            
+            verification_date = fake.date_between(start_date='-2y', end_date='today')
+            
+            owner = BeneficialOwner(
+                owner_id=str(uuid.uuid4()),
+                entity_id=entity_id,
+                entity_type=entity_type,
+                name=fake.name(),
+                nationality=random.choice(self.COUNTRIES),
+                country_of_residence=random.choice(self.COUNTRIES),
+                ownership_percentage=ownership,
+                dob=fake.date_between(start_date='-80y', end_date='-25y').strftime('%Y-%m-%d'),
+                verification_date=verification_date.strftime('%Y-%m-%d'),
+                pep_status=random.random() < 0.1,  # 10% chance of being PEP
+                sanctions_status=random.random() < 0.05,  # 5% chance of sanctions
+                adverse_media_status=random.random() < 0.15,  # 15% chance of adverse media
+                verification_source=random.choice(['document_verification', 'database_check', 'third_party_verification']),
+                notes=fake.text(max_nb_chars=200) if random.random() < 0.3 else None
+            )
+            owners.append(self._validate_and_convert_to_dict(owner))
+        return owners
 
-    def generate_documents(self, entity_id: str, entity_type: str, num_documents: int) -> List[dict]:
-        """Generate documents for an entity."""
-        documents = []
-        for _ in range(num_documents):
-            try:
-                issue_date = self.fake.date_between(start_date='-2y', end_date='today')
-                expiry_date = self.fake.date_between(start_date=issue_date, end_date='+5y')
-                
-                document = Document(
-                    document_id=str(uuid.uuid4()),
-                    entity_id=entity_id,
-                    entity_type=entity_type,
-                    document_type=random.choice(['passport', 'incorporation_certificate', 'license', 'tax_document', 'regulatory_filing']),
-                    document_number=self.fake.bothify(text='???###???###'),
-                    issuing_authority=self.fake.company(),
-                    issuing_country=random.choice(self.COUNTRIES),
-                    issue_date=issue_date.strftime('%Y-%m-%d'),
-                    expiry_date=expiry_date.strftime('%Y-%m-%d'),
-                    verification_status=random.choice(['verified', 'pending', 'rejected']),
-                    verification_date=self.fake.date_between(start_date=issue_date, end_date='today').strftime('%Y-%m-%d'),
-                    document_category=random.choice(['identity', 'financial', 'regulatory', 'legal']),
-                    notes=self.fake.text(max_nb_chars=100) if random.random() > 0.5 else None
-                )
-                validated_document = self._validate_and_convert_to_dict(document)
-                if validated_document is not None:
-                    documents.append(validated_document)
-            except Exception as e:
-                print(f"Error generating document: {e}")
-                continue
-        return documents
-
-    def generate_jurisdiction_presences(self, entity_id: str, entity_type: str, num_presences: int):
-        jurisdiction_presences = []
-        for _ in range(num_presences):
-            try:
-                presence = JurisdictionPresence(
-                    presence_id=str(uuid.uuid4()),
-                    entity_id=entity_id,
-                    entity_type=entity_type,
-                    jurisdiction=random.choice(self.COUNTRIES),
-                    presence_type=random.choice(['branch', 'subsidiary', 'representative_office']),
-                    regulatory_status=random.choice(['fully_regulated', 'limited_permission', 'exempt']),
-                    local_licenses=[f"license_{i}" for i in range(random.randint(1, 3))],
-                    establishment_date=fake.date_between(start_date='-10y', end_date='-1y').strftime('%Y-%m-%d'),
-                    local_regulator=fake.company(),
-                    compliance_status=random.choice(['compliant', 'under_review', 'non_compliant']),
-                    reporting_requirements={
-                        'frequency': random.choice(['monthly', 'quarterly', 'annually']),
-                        'reports': [f"report_{i}" for i in range(random.randint(1, 5))]
-                    },
-                    supervisory_authority=fake.company(),
-                    material_entity_flag=random.choice([True, False])
-                )
-                jurisdiction_presences.append(self._validate_and_convert_to_dict(presence))
-            except ValueError as e:
-                print(f"Validation error for jurisdiction presence: {e}")
-                continue
-        
-        return jurisdiction_presences
-
-    def generate_accounts(self, entity_id: str, entity_type: str, onboarding_date: str = None) -> List[dict]:
+    def generate_accounts(self, entity_id: str, entity_type: str, num_accounts: int) -> List[dict]:
         """Generate accounts for an entity."""
         accounts = []
-        num_accounts = random.randint(1, 3)
-        
-        if onboarding_date:
-            onboarding_dt = datetime.strptime(onboarding_date, '%Y-%m-%d')
-        else:
-            onboarding_dt = datetime.now() - timedelta(days=random.randint(30, 730))
-            
         for _ in range(num_accounts):
-            account_type = random.choice(['current', 'savings', 'investment', 'loan'])
-            try:
-                account = {
-                    'account_id': str(uuid.uuid4()),
-                    'entity_id': entity_id,
-                    'entity_type': entity_type,
-                    'account_type': account_type,
-                    'account_number': fake.numerify(text='#########'),
-                    'currency': random.choice(self.CURRENCIES),
-                    'status': 'active',
-                    'opening_date': datetime.strftime(onboarding_dt + timedelta(days=random.randint(0, 30)), '%Y-%m-%d'),
-                    'last_activity_date': datetime.strftime(datetime.now() - timedelta(days=random.randint(0, 30)), '%Y-%m-%d'),
-                    'balance': round(random.uniform(1000, 1000000), 2)
-                }
-                accounts.append(account)
-            except Exception as e:
-                print(f"Error generating account: {e}")
-                continue
-        
+            opening_date = fake.date_between(start_date='-5y', end_date='today')
+            last_activity = fake.date_between(start_date=opening_date, end_date='today')
+            currency = random.choice(self.CURRENCIES)
+            
+            account = Account(
+                account_id=str(uuid.uuid4()),
+                entity_id=entity_id,
+                entity_type=entity_type,
+                account_type=random.choice(['checking', 'savings', 'investment', 'custody']),
+                account_number=fake.bothify(text='??##########'),
+                currency=currency,
+                status='active',
+                opening_date=opening_date.strftime('%Y-%m-%d'),
+                last_activity_date=last_activity.strftime('%Y-%m-%d'),
+                balance=float(random.randint(10000, 10000000)),
+                risk_rating=random.choice(self.RISK_RATINGS),
+                purpose=random.choice(['business_operations', 'investment', 'trading']) if random.random() < 0.8 else None,
+                average_monthly_balance=float(random.randint(5000, 5000000)) if random.random() < 0.8 else None,
+                custodian_bank=fake.company() if random.random() < 0.5 else None,
+                account_officer=fake.name() if random.random() < 0.7 else None,
+                custodian_country=random.choice(self.COUNTRIES) if random.random() < 0.5 else None
+            )
+            accounts.append(self._validate_and_convert_to_dict(account))
         return accounts
 
     def generate_compliance_events(self, entity_id: str, entity_type: str, onboarding_date: Optional[str], num_events: int) -> List[dict]:
         """Generate compliance events for an entity."""
         events = []
-        if onboarding_date is None:
-            onboarding_date = fake.date_between(start_date='-2y', end_date='today').strftime('%Y-%m-%d')
+        if not onboarding_date:
+            return events
+
+        try:
+            # Parse onboarding date
+            onboarding = datetime.strptime(onboarding_date, '%Y-%m-%d').date()
+            today = datetime.now().date()
             
-        onboarding_datetime = datetime.strptime(onboarding_date, '%Y-%m-%d')
-        
-        for _ in range(num_events):
-            try:
-                event_date = fake.date_between(start_date=onboarding_datetime, end_date='today')
+            # Calculate days between onboarding and today
+            days_since_onboarding = (today - onboarding).days
+            if days_since_onboarding <= 0:
+                return events
+            
+            for _ in range(num_events):
+                # Generate random event date between onboarding and today
+                random_days = random.randint(0, days_since_onboarding)
+                event_date = onboarding + timedelta(days=random_days)
+                
+                # Generate decision date (80% chance, must be after event date)
+                decision_date = None
+                decision = None
+                decision_maker = None
+                if random.random() < 0.8:
+                    decision_date = today + timedelta(days=random.randint(1, 365))
+                    decision = random.choice(['approved', 'rejected', 'pending_review'])
+                    decision_maker = fake.name()
+                
+                # Generate next review date (70% chance)
+                next_review = None
+                if random.random() < 0.7:
+                    next_review = today + timedelta(days=random.randint(1, 365))
+                
                 event = ComplianceEvent(
                     event_id=str(uuid.uuid4()),
                     entity_id=entity_id,
@@ -335,19 +384,61 @@ class TestDataGenerator:
                     event_date=event_date.strftime('%Y-%m-%d'),
                     event_type=random.choice([e.value for e in ComplianceEventType]),
                     event_description=fake.text(max_nb_chars=200),
-                    old_state=random.choice(['pending', 'in_progress', 'completed']) if random.random() > 0.5 else None,
-                    new_state=random.choice(['pending', 'in_progress', 'completed']),
-                    decision=random.choice(['approved', 'rejected', 'pending_review']) if random.random() > 0.5 else None,
-                    decision_date=fake.date_between(start_date=event_date, end_date='today').strftime('%Y-%m-%d') if random.random() > 0.5 else None,
-                    decision_maker=fake.name() if random.random() > 0.5 else None,
-                    next_review_date=fake.date_between(start_date='today', end_date='+1y').strftime('%Y-%m-%d') if random.random() > 0.5 else None,
+                    old_state=random.choice(['active', 'pending', 'under_review']) if random.random() < 0.5 else None,
+                    new_state=random.choice(['active', 'pending', 'under_review', 'completed']),
+                    decision=decision,
+                    decision_date=decision_date.strftime('%Y-%m-%d') if decision_date else None,
+                    decision_maker=decision_maker,
+                    next_review_date=next_review.strftime('%Y-%m-%d') if next_review else None,
                     related_account_id=str(uuid.uuid4()),
-                    notes=fake.text(max_nb_chars=100) if random.random() > 0.5 else None
+                    notes=fake.text(max_nb_chars=100) if random.random() < 0.3 else None
                 )
                 events.append(self._validate_and_convert_to_dict(event))
-            except Exception as e:
-                print(f"Error generating compliance event: {e}")
+        except Exception as e:
+            print(f"Error in generate_compliance_events: {e}")
+            
         return events
+
+    def generate_jurisdiction_presence(self, entity_id: str, entity_type: str, registration_date: str, num_presence: int) -> List[dict]:
+        """Generate jurisdiction presence for an entity."""
+        presence = []
+        try:
+            # Parse registration_date to datetime
+            reg_date = datetime.strptime(registration_date, '%Y-%m-%d').date()
+            today = datetime.now().date()
+            
+            for _ in range(num_presence):
+                # Generate random date between registration date and today
+                days_since_reg = (today - reg_date).days
+                if days_since_reg <= 0:
+                    continue
+                    
+                random_days = random.randint(0, days_since_reg)
+                effective_from = reg_date + timedelta(days=random_days)
+                
+                # 20% chance of having an effective_to date
+                effective_to = None
+                if random.random() < 0.2:
+                    effective_to = today + timedelta(days=random.randint(1, 365))
+                
+                jurisdiction = JurisdictionPresence(
+                    presence_id=str(uuid.uuid4()),
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    jurisdiction=random.choice(self.COUNTRIES),
+                    registration_date=registration_date,
+                    effective_from=effective_from.strftime('%Y-%m-%d'),
+                    effective_to=effective_to.strftime('%Y-%m-%d') if effective_to else None,
+                    status=random.choice(['active', 'inactive', 'pending']),
+                    local_registration_id=fake.bothify(text='##########'),
+                    local_registration_date=effective_from.strftime('%Y-%m-%d'),
+                    local_registration_authority=random.choice(['Financial Services Authority', 'Central Bank', 'Securities Commission', 'Monetary Authority']),
+                    notes=fake.text(max_nb_chars=100) if random.random() < 0.3 else None
+                )
+                presence.append(self._validate_and_convert_to_dict(jurisdiction))
+        except Exception as e:
+            print(f"Error in generate_jurisdiction_presence: {e}")
+        return presence
 
     def _get_business_activity(self, business_type: str) -> str:
         """Helper method to get primary business activity based on business type."""
@@ -542,152 +633,145 @@ class TestDataGenerator:
             f"GICS:{fake.numerify(text='##########')}"
         ]
 
+    def get_entity_by_id(self, entity_id: str, entity_type: str, institutions: List[dict], subsidiaries: List[dict]) -> Optional[dict]:
+        """Helper function to get entity by ID and type."""
+        if entity_type == 'institution':
+            return next((inst for inst in institutions if inst['institution_id'] == entity_id), None)
+        else:
+            return next((sub for sub in subsidiaries if sub['subsidiary_id'] == entity_id), None)
+
+    async def process_entity(self, entity_id: str, entity_type: str, institutions: List[dict], subsidiaries: List[dict]):
+        """Process a single entity."""
+        entity_data = self.get_entity_by_id(entity_id, entity_type, institutions, subsidiaries)
+        if not entity_data:
+            return None
+
     async def generate_all_data(self, num_institutions: int = 5) -> Dict[str, pd.DataFrame]:
         """Generate all test data."""
-        print(f"Generating data for {num_institutions} institutions...")
+        print(f"Generating {num_institutions} institutions...")
         
-        # Generate base entities
+        # Generate institutions first
         institutions = self.generate_institutions(num_institutions)
-        subsidiaries = self.generate_subsidiaries(institutions)
-        
-        # Create entity list for related data generation
-        entities = [(inst['entity_id'], 'institution') for inst in institutions]
-        entities.extend([(sub['entity_id'], 'subsidiary') for sub in subsidiaries])
-        
-        # Initialize data containers
-        beneficial_owners = []
-        authorized_persons = []
-        addresses = []
-        documents = []
-        jurisdiction_presences = []
-        accounts = []
-        transactions = []
-
-        # Generate related data for each entity
-        for entity_id, entity_type in entities:
-            try:
-                # Find the entity data
-                if entity_type == 'institution':
-                    entity_data = next(inst for inst in institutions if inst['entity_id'] == entity_id)
-                else:
-                    entity_data = next(sub for sub in subsidiaries if sub['entity_id'] == entity_id)
-                
-                # Generate accounts for this entity
-                new_accounts = self.generate_accounts(
-                    entity_id, entity_type,
-                    onboarding_date=entity_data.get('onboarding_date', None)
-                )
-                accounts.extend(new_accounts)
-                
-                print(f"Generated related data for {entity_type} {entity_id}")
-                
-            except Exception as e:
-                print(f"Error generating data for {entity_type} {entity_id}: {e}")
-                continue
-        
-        # Generate transactions asynchronously
-        if accounts:
-            print("Generating transactions...")
-            # Set date range to ensure transactions are within 2 years
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=730)  # 2 years ago
+        if not institutions:
+            raise ValueError("Failed to generate institutions")
             
-            transactions = await self.transaction_generator.generate_transactions_for_accounts(
-                pd.DataFrame(accounts),
-                start_date=start_date.strftime('%Y-%m-%d'),
-                end_date=end_date.strftime('%Y-%m-%d')
-            )
-            print(f"Generated {len(transactions)} transactions")
-        
-        # Create DataFrames
-        return self._create_dataframes({
-            'institutions': institutions,
-            'subsidiaries': subsidiaries,
-            'beneficial_owners': beneficial_owners,
-            'authorized_persons': authorized_persons,
-            'addresses': addresses,
-            'documents': documents,
-            'jurisdiction_presences': jurisdiction_presences,
-            'accounts': accounts,
-            'transactions': transactions
-        })
-
-    def _create_dataframes(self, data_dict: Dict[str, List[dict]]) -> Dict[str, pd.DataFrame]:
-        """Convert dictionaries to DataFrames."""
-        dataframes = {}
-        for key, data in data_dict.items():
-            if not isinstance(data, pd.DataFrame) and (data is None or len(data) == 0):
-                print(f"Warning: No {key} data generated")
-                if key == 'transactions':
-                    # Create empty transactions DataFrame with required columns
-                    dataframes[key] = pd.DataFrame(columns=[
-                        'transaction_id', 'transaction_type', 'amount', 'currency',
-                        'account_id', 'is_debit', 'transaction_date', 'screening_alert',
-                        'risk_score', 'alert_details'
-                    ])
-                else:
-                    dataframes[key] = pd.DataFrame()
+        # Generate subsidiaries for each institution
+        print("Generating subsidiaries...")
+        subsidiaries = []
+        for inst in institutions:
+            # Generate 1-3 subsidiaries per institution
+            subs = self.generate_subsidiaries([inst])  # Pass as list since generate_subsidiaries expects a list
+            if subs:
+                subsidiaries.extend(subs)
             else:
-                if isinstance(data, pd.DataFrame):
-                    dataframes[key] = data
-                else:
-                    dataframes[key] = pd.DataFrame(data)
-        return dataframes
+                print(f"Warning: No subsidiaries generated for institution {inst['institution_id']}")
+        
+        # Create a list of all entities (institutions and subsidiaries) with their registration dates
+        print("Processing entities...")
+        entities = []
+        for inst in institutions:
+            entities.append((inst['institution_id'], 'institution', inst.get('incorporation_date')))
+        for sub in subsidiaries:
+            # Use incorporation_date instead of acquisition_date for jurisdiction presence
+            entities.append((sub['subsidiary_id'], 'subsidiary', sub.get('incorporation_date')))
+        
+        # Generate addresses for each entity
+        print("Generating addresses...")
+        addresses = []
+        for entity_id, entity_type, _ in entities:
+            addresses.extend(self.generate_addresses(entity_id, entity_type, random.randint(1, 3)))
+        
+        # Generate beneficial owners for each entity
+        print("Generating beneficial owners...")
+        beneficial_owners = []
+        for entity_id, entity_type, _ in entities:
+            beneficial_owners.extend(self.generate_beneficial_owners(entity_id, entity_type, random.randint(1, 5)))
+        
+        # Generate jurisdiction presence for each entity
+        print("Generating jurisdiction presence...")
+        jurisdiction_presence = []
+        for entity_id, entity_type, reg_date in entities:
+            if reg_date:  # Only generate if we have a registration date
+                try:
+                    presence_records = self.generate_jurisdiction_presence(entity_id, entity_type, reg_date, random.randint(1, 3))
+                    if presence_records:
+                        jurisdiction_presence.extend(presence_records)
+                except Exception as e:
+                    print(f"Error generating jurisdiction presence for {entity_id}: {e}")
+        
+        # Generate compliance events for each entity
+        print("Generating compliance events...")
+        compliance_events = []
+        for entity_id, entity_type, _ in entities:
+            # Get the appropriate date for compliance events
+            event_start_date = None
+            if entity_type == 'institution':
+                inst = next(i for i in institutions if i['institution_id'] == entity_id)
+                event_start_date = inst.get('onboarding_date')
+            else:
+                sub = next(s for s in subsidiaries if s['subsidiary_id'] == entity_id)
+                event_start_date = sub.get('acquisition_date')
+            
+            if event_start_date:
+                try:
+                    event_records = self.generate_compliance_events(entity_id, entity_type, event_start_date, random.randint(2, 5))
+                    if event_records:
+                        compliance_events.extend(event_records)
+                except Exception as e:
+                    print(f"Error generating compliance events for {entity_id}: {e}")
+        
+        # Generate accounts for each entity
+        print("Generating accounts...")
+        accounts = []
+        for entity_id, entity_type, _ in entities:
+            accounts.extend(self.generate_accounts(entity_id, entity_type, random.randint(1, 5)))
+        
+        # Generate transactions for each account
+        print("Generating transactions...")
+        transactions = []
+        
+        # Create accounts DataFrame
+        accounts_df = pd.DataFrame(accounts)
+        
+        # Generate transactions using the transaction generator
+        transactions = await self.transaction_generator.generate_transactions_for_accounts(
+            accounts_df=accounts_df,
+            batch_size=1000
+        )
+        
+        # Convert to DataFrames
+        print("\nConverting to DataFrames...")
+        data = {
+            'institutions': pd.DataFrame(institutions),
+            'subsidiaries': pd.DataFrame(subsidiaries),
+            'addresses': pd.DataFrame(addresses),
+            'beneficial_owners': pd.DataFrame(beneficial_owners),
+            'jurisdiction_presence': pd.DataFrame(jurisdiction_presence),
+            'compliance_events': pd.DataFrame(compliance_events),
+            'accounts': pd.DataFrame(accounts),
+            'transactions': pd.DataFrame(transactions)
+        }
+        
+        return data
 
-    def generate_transactions(self, accounts: List[dict], start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    async def generate_transactions(self, accounts: List[dict], start_date: str = None, end_date: str = None) -> List[dict]:
         """Generate transactions for a list of accounts."""
         if not accounts:
-            return pd.DataFrame()  # Return empty DataFrame if no accounts
-            
-        fake = Faker()
-        transactions = []
+            return []
+
+        # Convert to DataFrame for efficient processing
+        accounts_df = pd.DataFrame(accounts)
         
-        # Set default date range if not provided
-        if not start_date:
-            start_date = (datetime.now() - timedelta(days=365)).isoformat()
-        if not end_date:
-            end_date = datetime.now().isoformat()
-            
-        # Generate transactions for each account
-        for account in accounts:
-            num_transactions = random.randint(50, 200)  # Generate between 50-200 transactions per account
-            
-            for _ in range(num_transactions):
-                transaction_date = fake.date_time_between(
-                    start_date=start_date,
-                    end_date=end_date
-                )
-                
-                is_debit = random.choice([True, False])
-                amount = round(random.uniform(100, 50000), 2)
-                
-                # Generate counterparty details
-                counterparty_country = random.choice(self.COUNTRIES)
-                is_high_risk = counterparty_country in self.COUNTRIES
-                
-                transaction = {
-                    'transaction_id': str(uuid.uuid4()),
-                    'account_id': account['account_id'],
-                    'transaction_date': transaction_date.isoformat(),
-                    'transaction_type': random.choice(['Wire', 'ACH', 'Check', 'Cash']),
-                    'amount': amount,
-                    'currency': account['currency'],
-                    'is_debit': is_debit,
-                    'counterparty_name': fake.company(),
-                    'counterparty_account': fake.bothify(text='#########'),
-                    'counterparty_country': counterparty_country,
-                    'screening_alert': is_high_risk,
-                    'risk_score': random.randint(70, 100) if is_high_risk else random.randint(0, 69),
-                    'alert_details': f'High-risk country: {counterparty_country}' if is_high_risk else None
-                }
-                transactions.append(transaction)
+        # Generate transactions
+        transactions = await self.transaction_generator.generate_transactions_for_accounts(
+            accounts_df,
+            start_date=start_date,
+            end_date=end_date,
+            batch_size=100
+        )
         
-        # Convert to DataFrame and sort by date
-        df = pd.DataFrame(transactions)
-        if not df.empty:
-            df = df.sort_values('transaction_date')
-        
-        return df
+        # Return transactions directly as a list of dictionaries
+        return transactions
 
 async def main():
     parser = argparse.ArgumentParser(description='Generate test data for AML monitoring')
@@ -695,10 +779,19 @@ async def main():
     args = parser.parse_args()
 
     generator = TestDataGenerator()
+    db_manager = DatabaseManager()
 
     try:
+        # Clean up existing data
+        await db_manager.cleanup_postgres()
+        await db_manager.cleanup_neo4j()
+        
         # Generate data
         data = await generator.generate_all_data(args.num_institutions)
+        
+        # Save to databases
+        await db_manager.save_to_postgres(data)
+        await db_manager.save_to_neo4j(data)
         
         # Save to CSV files
         output_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
@@ -710,11 +803,18 @@ async def main():
                 df.to_csv(output_path, index=False)
                 print(f"Saved {name} to {output_path}")
         
-        print("Data generation and saving completed successfully")
+        print("\n=== Data Generation Complete ===")
+        print("Summary of generated data:")
+        for name, df in data.items():
+            print(f"- {name}: {len(df)} records")
         
     except Exception as e:
         print(f"Error during data generation: {e}")
         raise
+    finally:
+        # Close database connections
+        await db_manager.postgres_handler.close()
+        await db_manager.neo4j_handler.close()
 
 if __name__ == '__main__':
     asyncio.run(main())
