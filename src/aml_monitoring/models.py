@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, field_validator, EmailStr, ConfigDict, model_validator
 from typing import List, Optional, Dict, Union, Any
 from datetime import date
 from enum import Enum
@@ -112,22 +112,20 @@ class Subsidiary(BaseModel):
             raise ValueError('acquisition_date must be after incorporation_date')
         return v
 
-    @field_validator('customer_onboarding_date')
-    @classmethod
-    def validate_customer_fields(cls, v: Optional[str], info) -> Optional[str]:
-        is_customer = info.data.get('is_customer', False)
-        if is_customer:
-            if not v:
-                raise ValueError('customer_onboarding_date is required when is_customer is True')
-            if not info.data.get('customer_id'):
-                raise ValueError('customer_id is required when is_customer is True')
-            if not info.data.get('customer_risk_rating'):
-                raise ValueError('customer_risk_rating is required when is_customer is True')
-            if not info.data.get('customer_status'):
-                raise ValueError('customer_status is required when is_customer is True')
-            if 'incorporation_date' in info.data and v < info.data['incorporation_date']:
+    @model_validator(mode='after')
+    def validate_customer_fields(self) -> 'Subsidiary':
+        if self.is_customer:
+            if not all([
+                self.customer_id,
+                self.customer_onboarding_date,
+                self.customer_risk_rating,
+                self.customer_status
+            ]):
+                raise ValueError('All customer fields (customer_id, customer_onboarding_date, customer_risk_rating, customer_status) are required when is_customer is True')
+            
+            if self.customer_onboarding_date < self.incorporation_date:
                 raise ValueError('customer_onboarding_date must be after incorporation_date')
-        return v
+        return self
 
 class Address(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -229,19 +227,18 @@ class Document(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
     document_id: str
-    institution_id: str
+    entity_id: str
+    entity_type: str
     document_type: str
     document_number: str
     issuing_authority: str
     issuing_country: str
-    submission_date: str
-    verification_date: str
-    expiry_date: Optional[str] = None
-    document_status: str
+    issue_date: str
+    expiry_date: str
     verification_status: str
-    verification_method: str
-    file_reference: str
-    metadata: Dict[str, str]
+    verification_date: str
+    document_category: str
+    notes: Optional[str] = None
 
 class ReportingRequirements(BaseModel):
     frequency: str

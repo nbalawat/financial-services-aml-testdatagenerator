@@ -1,3 +1,19 @@
+Metadata-Version: 2.1
+Name: aml-monitoring
+Version: 0.1.0
+Summary: AML Transaction Monitoring System
+Author: Your Name
+Author-email: your.email@example.com
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Financial and Insurance Industry
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+
 # AML Transaction Monitoring System
 
 A comprehensive system for generating and managing test data for Anti-Money Laundering (AML) transaction monitoring. This system helps financial institutions test and validate their AML monitoring systems by generating realistic customer data, transactions, and risk assessments.

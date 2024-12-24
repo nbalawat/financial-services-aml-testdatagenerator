@@ -1,0 +1,17 @@
+account_id,entity_id,entity_type,account_type,account_number,currency,status,opening_date,last_activity_date,balance,risk_rating,purpose,average_monthly_balance,custodian_bank,account_officer
+f6a5377a-cefe-467e-8cc6-94b733ef952f,7e17c9e2-7aa3-41d4-9f31-2fa036530584,institution,current,012545416,AUD,dormant,2023-12-20,2024-05-07,941805.29,low,business,362164.59,Curry PLC,Derek Kim
+b123baa5-7f6a-45ef-8862-0bbec3f730c2,269d8581-3b99-4d0e-aac2-1a2df4f50d31,institution,savings,055656071,EUR,closed,2023-02-17,2023-04-16,198166.46,low,settlement,314725.85,,
+1f07e2c1-1ddc-4132-bcdf-aaa4a322d51f,269d8581-3b99-4d0e-aac2-1a2df4f50d31,institution,loan,055519767,HKD,dormant,2023-01-16,2023-01-16,96537.65,high,investment,532042.5,Lopez-Mayo,Nichole Simon
+49e34644-8410-4708-9aea-d55205221835,a0526e22-2a2d-449e-89c5-4cf8f8ebf6df,subsidiary,current,763391535,CHF,dormant,2024-01-21,2024-09-27,143434.03,low,investment,280358.64,,Robert Hamilton
+488df32f-7b03-4d53-8d3c-90351125a291,a0526e22-2a2d-449e-89c5-4cf8f8ebf6df,subsidiary,savings,898882908,SGD,closed,2023-12-16,2024-01-07,550711.21,medium,settlement,409555.1,,
+4ae75d01-df83-4600-845c-2c06cfaa8809,a0526e22-2a2d-449e-89c5-4cf8f8ebf6df,subsidiary,savings,441417351,HKD,closed,2024-10-18,2024-10-31,971396.0,low,business,383832.35,,Gina Lane
+299ea71d-ab9a-4981-9bea-7bd2afb155ec,f5b6fad3-e0d5-4787-9d2c-44ee053524c3,subsidiary,savings,087971716,SGD,active,2024-05-08,2024-07-19,559618.3,medium,operational,89393.41,Martinez-Singh,
+68b47a53-3f2d-43b7-b916-018719663abd,02aeb2a7-5b9f-479f-b624-e514bdd5f198,subsidiary,investment,252053831,JPY,active,2024-03-02,2024-03-17,499425.36,low,operational,423874.45,"Klein, Sanchez and Reilly",Jessica Wade
+85c581b7-466e-4927-9428-ad7dddbd1f40,02aeb2a7-5b9f-479f-b624-e514bdd5f198,subsidiary,savings,285920186,HKD,closed,2024-09-24,2024-10-14,23864.36,low,settlement,871465.57,,Ashley Foster
+42948f12-fd98-4153-bb52-b9c7def9324e,02aeb2a7-5b9f-479f-b624-e514bdd5f198,subsidiary,loan,246175430,USD,dormant,2023-09-29,2024-01-15,996911.21,medium,operational,325230.49,"Merritt, Smith and Ellis",Aaron Young MD
+21b648ca-e90e-44ed-8283-7e7f01505f4f,1f7d3785-716c-4ce3-bc9f-4a000ad60d17,subsidiary,investment,187755200,JPY,dormant,2023-07-27,2023-11-25,294669.55,medium,settlement,480740.77,,Olivia Hill
+dd25d7e7-8feb-42a2-84aa-5e22373bfae2,66a5806e-2d30-4cef-9f40-3922658874fc,subsidiary,loan,446945566,HKD,dormant,2023-09-30,2024-04-27,805939.49,low,business,420505.69,Singleton and Sons,Christopher Garcia
+4fba879a-6bed-46d3-ab9b-5dbac7e9bee0,66a5806e-2d30-4cef-9f40-3922658874fc,subsidiary,savings,647225502,GBP,active,2023-03-11,2024-12-11,501280.42,low,operational,507189.24,"Spencer, Carlson and Douglas",Hannah Webb
+9798c1cf-7cc9-45e1-be74-29232c493574,bc4ac57e-da57-4542-9d78-f4fd94c77601,subsidiary,savings,160563690,GBP,active,2023-05-25,2024-09-08,102538.49,low,operational,700504.97,Smith and Sons,
+509da993-615b-4862-9237-b6561719f36c,bc4ac57e-da57-4542-9d78-f4fd94c77601,subsidiary,investment,509860298,AUD,active,2024-09-08,2024-10-11,178219.66,low,operational,910138.68,,George Myers
+20b3ff00-5e24-46ab-8f97-f292f66ce531,bc4ac57e-da57-4542-9d78-f4fd94c77601,subsidiary,loan,291897615,AUD,dormant,2023-05-30,2023-08-10,955638.79,low,investment,634971.49,,
