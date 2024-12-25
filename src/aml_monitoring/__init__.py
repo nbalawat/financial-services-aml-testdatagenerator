@@ -5,7 +5,7 @@ including customer data, subsidiaries, risk assessments, and compliance events.
 """
 
 from .models import *
-from .db_handlers import *
-from .generate_test_data import *
+from .database import *
+from .data_generator import *
 
 __version__ = "0.1.0"

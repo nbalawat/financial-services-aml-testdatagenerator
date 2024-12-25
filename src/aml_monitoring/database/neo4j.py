@@ -183,7 +183,7 @@ class Neo4jHandler(DatabaseHandler):
             user = os.getenv('NEO4J_USER', 'neo4j')
             password = os.getenv('NEO4J_PASSWORD', '')
             
-            uri = f'neo4j://{host}:{port}'
+            uri = f'bolt://{host}:{port}'
             self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
             
             # Test connection
