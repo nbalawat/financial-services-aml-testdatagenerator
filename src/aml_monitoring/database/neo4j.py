@@ -123,7 +123,7 @@ class Neo4jHandler(DatabaseHandler):
         'HAS_AUTHORIZED_PERSON': {
             'from_label': ['Institution', 'Subsidiary'],
             'to_label': 'AuthorizedPerson',
-            'properties': ['role', 'authorization_date']
+            'properties': ['title', 'authorization_date']
         },
         'INCORPORATED_IN': {
             'from_label': ['Institution', 'Subsidiary'],
@@ -165,6 +165,31 @@ class Neo4jHandler(DatabaseHandler):
         },
         'BELONGS_TO': {
             'from_label': 'Transaction',
+            'to_label': 'Account',
+            'properties': []
+        },
+        'HAS_RISK_ASSESSMENT': {
+            'from_label': ['Institution', 'Subsidiary'],
+            'to_label': 'RiskAssessment',
+            'properties': []
+        },
+        'HAS_AUTHORIZED_PERSON': {
+            'from_label': ['Institution', 'Subsidiary'],
+            'to_label': 'AuthorizedPerson',
+            'properties': ['title', 'authorization_date']
+        },
+        'HAS_DOCUMENT': {
+            'from_label': ['Institution', 'Subsidiary'],
+            'to_label': 'Document',
+            'properties': ['document_type']
+        },
+        'HAS_COMPLIANCE_EVENT': {
+            'from_label': ['Institution', 'Subsidiary'],
+            'to_label': 'ComplianceEvent',
+            'properties': []
+        },
+        'RELATED_TO': {
+            'from_label': 'ComplianceEvent',
             'to_label': 'Account',
             'properties': []
         }
@@ -444,7 +469,10 @@ class Neo4jHandler(DatabaseHandler):
                                     a.risk_rating = $risk_rating
                                 WITH a
                                 MATCH (i:Institution {institution_id: $entity_id})
-                                MERGE (a)-[:BELONGS_TO]->(i)
+                                MERGE (i)-[:HAS_ACCOUNT]->(a)
+                                WITH a
+                                MATCH (bd:BusinessDate {date: $open_date})
+                                MERGE (a)-[:OPENED_ON]->(bd)
                             """, {
                                 'id': str(row['account_id']),
                                 'number': row['account_number'],
@@ -476,6 +504,7 @@ class Neo4jHandler(DatabaseHandler):
                                 WITH t
                                 MATCH (a:Account {account_id: $account_id})
                                 MERGE (t)-[:BELONGS_TO]->(a)
+                                MERGE (a)-[:TRANSACTED]->(t)
                                 WITH t
                                 MATCH (bd:BusinessDate {date: $date})
                                 MERGE (t)-[:OCCURRED_ON]->(bd)
@@ -559,11 +588,7 @@ class Neo4jHandler(DatabaseHandler):
                                     a.city = $city,
                                     a.state_province = $state,
                                     a.postal_code = $postal,
-                                    a.country = $country,
-                                    a.status = $status,
-                                    a.effective_from = $from_date,
-                                    a.effective_to = $to_date,
-                                    a.primary_address = $primary
+                                    a.country = $country
                                 ON MATCH SET
                                     a.address_type = $type,
                                     a.address_line1 = $line1,
@@ -571,15 +596,11 @@ class Neo4jHandler(DatabaseHandler):
                                     a.city = $city,
                                     a.state_province = $state,
                                     a.postal_code = $postal,
-                                    a.country = $country,
-                                    a.status = $status,
-                                    a.effective_from = $from_date,
-                                    a.effective_to = $to_date,
-                                    a.primary_address = $primary
+                                    a.country = $country
                                 WITH e, a
                                 MERGE (e)-[:HAS_ADDRESS {
                                     address_type: $type,
-                                    effective_from: $from_date
+                                    effective_from: $effective_from
                                 }]->(a)
                                 WITH a
                                 MERGE (c:Country {code: $country})
@@ -594,12 +615,204 @@ class Neo4jHandler(DatabaseHandler):
                                 'state': row.get('state_province'),
                                 'postal': row.get('postal_code'),
                                 'country': row['country'],
-                                'status': row['status'],
-                                'from_date': row['effective_from'],
-                                'to_date': row.get('effective_to'),
-                                'primary': bool(row.get('primary_address', False))
+                                'effective_from': row['effective_from']
                             })
-            
+
+                # Save risk assessments
+                if 'risk_assessments' in normalized_data and not normalized_data['risk_assessments'].empty:
+                    for i in range(0, len(normalized_data['risk_assessments']), batch_size):
+                        batch = normalized_data['risk_assessments'].iloc[i:i + batch_size]
+                        for _, row in batch.iterrows():
+                            await session.run("""
+                                MATCH (e) 
+                                WHERE (e:Institution OR e:Subsidiary) AND 
+                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
+                                MERGE (r:RiskAssessment {assessment_id: $id})
+                                ON CREATE SET
+                                    r.assessment_date = $date,
+                                    r.risk_rating = $rating,
+                                    r.risk_score = $score,
+                                    r.assessment_type = $type,
+                                    r.risk_factors = $factors,
+                                    r.conducted_by = $assessor,
+                                    r.next_review_date = $next_review
+                                ON MATCH SET
+                                    r.assessment_date = $date,
+                                    r.risk_rating = $rating,
+                                    r.risk_score = $score,
+                                    r.assessment_type = $type,
+                                    r.risk_factors = $factors,
+                                    r.conducted_by = $assessor,
+                                    r.next_review_date = $next_review
+                                WITH e, r
+                                MERGE (e)-[:HAS_RISK_ASSESSMENT]->(r)
+                                WITH r
+                                MATCH (bd:BusinessDate {date: $date})
+                                MERGE (r)-[:ASSESSED_ON]->(bd)
+                            """, {
+                                'id': str(row['assessment_id']),
+                                'entity_id': str(row['entity_id']),
+                                'date': row['assessment_date'],
+                                'rating': row['risk_rating'],
+                                'score': float(row['risk_score']),
+                                'type': row['assessment_type'],
+                                'factors': json.dumps(row['risk_factors']),
+                                'assessor': row.get('conducted_by'),
+                                'next_review': row.get('next_review_date')
+                            })
+
+                # Save authorized persons
+                if 'authorized_persons' in normalized_data and not normalized_data['authorized_persons'].empty:
+                    for i in range(0, len(normalized_data['authorized_persons']), batch_size):
+                        batch = normalized_data['authorized_persons'].iloc[i:i + batch_size]
+                        for _, row in batch.iterrows():
+                            await session.run("""
+                                MATCH (e) 
+                                WHERE (e:Institution OR e:Subsidiary) AND 
+                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
+                                MERGE (p:AuthorizedPerson {person_id: $id})
+                                ON CREATE SET
+                                    p.name = $name,
+                                    p.title = $title,
+                                    p.authorization_level = $auth_level,
+                                    p.authorization_type = $auth_type,
+                                    p.authorization_start = $auth_start,
+                                    p.authorization_end = $auth_end,
+                                    p.contact_info = $contact_info,
+                                    p.is_active = $active,
+                                    p.last_verification_date = $verification_date
+                                ON MATCH SET
+                                    p.name = $name,
+                                    p.title = $title,
+                                    p.authorization_level = $auth_level,
+                                    p.authorization_type = $auth_type,
+                                    p.authorization_start = $auth_start,
+                                    p.authorization_end = $auth_end,
+                                    p.contact_info = $contact_info,
+                                    p.is_active = $active,
+                                    p.last_verification_date = $verification_date
+                                WITH e, p
+                                MERGE (e)-[:HAS_AUTHORIZED_PERSON {
+                                    title: $title,
+                                    authorization_date: $auth_start
+                                }]->(p)
+                                WITH p
+                                MERGE (c:Country {code: $nationality})
+                                MERGE (p)-[:CITIZEN_OF]->(c)
+                            """, {
+                                'id': str(row['person_id']),
+                                'entity_id': str(row['entity_id']),
+                                'name': row['name'],
+                                'title': row['title'],
+                                'auth_level': row['authorization_level'],
+                                'auth_type': row['authorization_type'],
+                                'auth_start': row['authorization_start'],
+                                'auth_end': row.get('authorization_end'),
+                                'contact_info': json.dumps(row['contact_info']),
+                                'active': bool(row['is_active']),
+                                'verification_date': row.get('last_verification_date'),
+                                'nationality': row.get('nationality', 'US')  # Default to US if not specified
+                            })
+
+                # Save documents
+                if 'documents' in normalized_data and not normalized_data['documents'].empty:
+                    for i in range(0, len(normalized_data['documents']), batch_size):
+                        batch = normalized_data['documents'].iloc[i:i + batch_size]
+                        for _, row in batch.iterrows():
+                            await session.run("""
+                                MATCH (e) 
+                                WHERE (e:Institution OR e:Subsidiary) AND 
+                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
+                                MERGE (d:Document {document_id: $id})
+                                ON CREATE SET
+                                    d.document_type = $type,
+                                    d.document_number = $number,
+                                    d.issuing_authority = $authority,
+                                    d.issuing_country = $country,
+                                    d.issue_date = $issue_date,
+                                    d.expiry_date = $expiry_date,
+                                    d.verification_status = $status,
+                                    d.verification_date = $verification_date
+                                ON MATCH SET
+                                    d.document_type = $type,
+                                    d.document_number = $number,
+                                    d.issuing_authority = $authority,
+                                    d.issuing_country = $country,
+                                    d.issue_date = $issue_date,
+                                    d.expiry_date = $expiry_date,
+                                    d.verification_status = $status,
+                                    d.verification_date = $verification_date
+                                WITH e, d
+                                MERGE (e)-[:HAS_DOCUMENT {document_type: $type}]->(d)
+                                WITH d
+                                MATCH (bd:BusinessDate {date: $issue_date})
+                                MERGE (d)-[:ISSUED_ON]->(bd)
+                                WITH d
+                                MERGE (c:Country {code: $country})
+                                MERGE (d)-[:ISSUED_IN]->(c)
+                            """, {
+                                'id': str(row['document_id']),
+                                'entity_id': str(row['entity_id']),
+                                'type': row['document_type'],
+                                'number': row['document_number'],
+                                'authority': row['issuing_authority'],
+                                'country': row['issuing_country'],
+                                'issue_date': row['issue_date'],
+                                'expiry_date': row['expiry_date'],
+                                'status': row['verification_status'],
+                                'verification_date': row.get('verification_date')
+                            })
+
+                # Save compliance events
+                if 'compliance_events' in normalized_data and not normalized_data['compliance_events'].empty:
+                    for i in range(0, len(normalized_data['compliance_events']), batch_size):
+                        batch = normalized_data['compliance_events'].iloc[i:i + batch_size]
+                        for _, row in batch.iterrows():
+                            await session.run("""
+                                MATCH (e) 
+                                WHERE (e:Institution OR e:Subsidiary) AND 
+                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
+                                MERGE (ce:ComplianceEvent {event_id: $id})
+                                ON CREATE SET
+                                    ce.event_type = $type,
+                                    ce.event_date = $date,
+                                    ce.severity = $severity,
+                                    ce.status = $status,
+                                    ce.description = $desc,
+                                    ce.reported_by = $reporter,
+                                    ce.resolution = $resolution,
+                                    ce.resolution_date = $resolution_date
+                                ON MATCH SET
+                                    ce.event_type = $type,
+                                    ce.event_date = $date,
+                                    ce.severity = $severity,
+                                    ce.status = $status,
+                                    ce.description = $desc,
+                                    ce.reported_by = $reporter,
+                                    ce.resolution = $resolution,
+                                    ce.resolution_date = $resolution_date
+                                WITH e, ce
+                                MERGE (e)-[:HAS_COMPLIANCE_EVENT]->(ce)
+                                WITH ce
+                                MATCH (bd:BusinessDate {date: $date})
+                                MERGE (ce)-[:OCCURRED_ON]->(bd)
+                                WITH ce
+                                MATCH (a:Account {account_id: $related_account_id})
+                                MERGE (ce)-[:RELATED_TO]->(a)
+                            """, {
+                                'id': str(row['event_id']),
+                                'entity_id': str(row['entity_id']),
+                                'related_account_id': str(row['related_account_id']),
+                                'type': row['event_type'],
+                                'date': row['event_date'],
+                                'severity': row.get('severity', 'medium'),
+                                'status': row.get('status', 'open'),
+                                'desc': row['event_description'],
+                                'reporter': row.get('decision_maker'),
+                                'resolution': row.get('decision'),
+                                'resolution_date': row.get('decision_date')
+                            })
+
             self._log_operation('save_batch', {'status': 'success'})
             
         except Exception as e:
