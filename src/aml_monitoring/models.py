@@ -29,37 +29,38 @@ class Institution(BaseModel):
     
     institution_id: str
     legal_name: str
-    business_type: str
+    business_type: BusinessType
     incorporation_country: str
     incorporation_date: str
     onboarding_date: str
-    risk_rating: str
-    operational_status: str
-    primary_currency: str
-    regulatory_status: str
-    primary_business_activity: str
-    primary_regulator: str
-    licenses: List[str]
-    aml_program_status: str
-    kyc_refresh_date: str
-    last_audit_date: str
-    next_audit_date: str
-    relationship_manager: str
-    relationship_status: str
-    swift_code: str
-    lei_code: str
-    tax_id: str
-    website: str
-    primary_contact_name: str
-    primary_contact_email: str
-    primary_contact_phone: str
-    annual_revenue: float
-    employee_count: int
-    year_established: int
-    customer_status: str
-    last_review_date: str
-    industry_codes: List[str]
-    public_company: bool
+    risk_rating: RiskRating
+    operational_status: OperationalStatus
+    
+    primary_currency: Optional[str] = None
+    regulatory_status: Optional[str] = None
+    primary_business_activity: Optional[str] = None
+    primary_regulator: Optional[str] = None
+    licenses: Optional[List[str]] = None
+    aml_program_status: Optional[str] = None
+    kyc_refresh_date: Optional[str] = None
+    last_audit_date: Optional[str] = None
+    next_audit_date: Optional[str] = None
+    relationship_manager: Optional[str] = None
+    relationship_status: Optional[str] = None
+    swift_code: Optional[str] = None
+    lei_code: Optional[str] = None
+    tax_id: Optional[str] = None
+    website: Optional[str] = None
+    primary_contact_name: Optional[str] = None
+    primary_contact_email: Optional[str] = None
+    primary_contact_phone: Optional[str] = None
+    annual_revenue: Optional[float] = None
+    employee_count: Optional[int] = None
+    year_established: Optional[int] = None
+    customer_status: Optional[str] = None
+    last_review_date: Optional[str] = None
+    industry_codes: Optional[List[str]] = None
+    public_company: bool = False
     stock_symbol: Optional[str] = None
     stock_exchange: Optional[str] = None
 
@@ -100,6 +101,7 @@ class Subsidiary(BaseModel):
     corporate_governance_model: str
     is_regulated: bool
     is_customer: bool
+    industry_codes: Optional[List[str]] = None
     customer_id: Optional[str] = None
     customer_onboarding_date: Optional[str] = None
     customer_risk_rating: Optional[str] = None
@@ -163,15 +165,16 @@ class RiskAssessment(BaseModel):
     entity_id: str
     entity_type: str
     assessment_date: str
-    risk_rating: str
+    risk_rating: RiskRating
     risk_score: str
     assessment_type: str
     risk_factors: Dict[str, int]
-    conducted_by: str
-    approved_by: str
-    findings: str
-    assessor: str
-    next_review_date: str
+    
+    conducted_by: Optional[str] = None
+    approved_by: Optional[str] = None
+    findings: Optional[str] = None
+    assessor: Optional[str] = None
+    next_review_date: Optional[str] = None
     notes: Optional[str] = None
 
     @field_validator('risk_factors')
@@ -235,9 +238,10 @@ class Document(BaseModel):
     issuing_country: str
     issue_date: str
     expiry_date: str
-    verification_status: str
-    verification_date: str
-    document_category: str
+    
+    verification_status: Optional[str] = None
+    verification_date: Optional[str] = None
+    document_category: Optional[str] = None
     notes: Optional[str] = None
 
 class ReportingRequirements(BaseModel):
@@ -254,12 +258,13 @@ class JurisdictionPresence(BaseModel):
     jurisdiction: str
     registration_date: str
     effective_from: str
-    effective_to: Optional[str]
     status: str
     local_registration_id: str
-    local_registration_date: str
-    local_registration_authority: str
-    notes: Optional[str]
+    
+    effective_to: Optional[str] = None
+    local_registration_date: Optional[str] = None
+    local_registration_authority: Optional[str] = None
+    notes: Optional[str] = None
 
 class Account(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -272,9 +277,10 @@ class Account(BaseModel):
     currency: str
     status: str
     opening_date: str
-    last_activity_date: str
     balance: float
     risk_rating: RiskRating
+    
+    last_activity_date: Optional[str] = None
     purpose: Optional[str] = None
     average_monthly_balance: Optional[float] = None
     custodian_bank: Optional[str] = None
@@ -378,16 +384,17 @@ class Transaction(BaseModel):
     transaction_status: TransactionStatus
     is_debit: bool
     account_id: str
-    counterparty_account: str
-    counterparty_name: str
-    counterparty_bank: str
     entity_id: str
     entity_type: str
-    counterparty_entity_name: str
-    originating_country: str
-    destination_country: str
-    purpose: str
-    reference_number: str
+    
+    counterparty_account: Optional[str] = None
+    counterparty_name: Optional[str] = None
+    counterparty_bank: Optional[str] = None
+    counterparty_entity_name: Optional[str] = None
+    originating_country: Optional[str] = None
+    destination_country: Optional[str] = None
+    purpose: Optional[str] = None
+    reference_number: Optional[str] = None
     screening_alert: bool = False
     alert_details: Optional[str] = None
     risk_score: Optional[int] = None
@@ -397,3 +404,10 @@ class Transaction(BaseModel):
     batch_id: Optional[str] = None
     check_number: Optional[str] = None
     wire_reference: Optional[str] = None
+
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError('amount must be positive')
+        return v

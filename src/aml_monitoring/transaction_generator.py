@@ -213,7 +213,7 @@ class TransactionGenerator:
             }
 
             # Debug log
-            print(f"Generated transaction {transaction_id} with status: {transaction['transaction_status']}")
+            # print(f"Generated transaction {transaction_id} with status: {transaction['transaction_status']}")
             return transaction
         except Exception as e:
             print(f"Error generating transaction: {e}")

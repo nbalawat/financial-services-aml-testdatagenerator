@@ -209,7 +209,8 @@ class TestDataGenerator:
                             requires_local_audit=True,
                             corporate_governance_model='board_of_directors',
                             is_regulated=True,
-                            is_customer=False
+                            is_customer=False,
+                            industry_codes=['6021', '6022', '6029']  # Default financial industry codes
                         )
                         subsidiary_dict = self._validate_and_convert_to_dict(subsidiary)
                         if subsidiary_dict:
@@ -739,6 +740,50 @@ class TestDataGenerator:
             batch_size=1000
         )
         
+        # Generate risk assessments for each entity
+        print("Generating risk assessments...")
+        risk_assessments = []
+        for entity_id, entity_type, _ in entities:
+            # Get the appropriate date for risk assessments
+            assessment_start_date = None
+            if entity_type == 'institution':
+                inst = next(i for i in institutions if i['institution_id'] == entity_id)
+                assessment_start_date = inst.get('onboarding_date')
+            else:
+                sub = next(s for s in subsidiaries if s['subsidiary_id'] == entity_id)
+                assessment_start_date = sub.get('acquisition_date')
+            
+            if assessment_start_date:
+                try:
+                    assessment_records = self.generate_risk_assessments(entity_id, entity_type, assessment_start_date)
+                    if assessment_records:
+                        risk_assessments.extend(assessment_records)
+                except Exception as e:
+                    print(f"Error generating risk assessments for {entity_id}: {e}")
+        
+        # Generate authorized persons for each entity
+        print("Generating authorized persons...")
+        authorized_persons = []
+        for entity_id, entity_type, _ in entities:
+            try:
+                person_records = self.generate_authorized_persons(entity_id, entity_type)
+                if person_records:
+                    authorized_persons.extend(person_records)
+            except Exception as e:
+                print(f"Error generating authorized persons for {entity_id}: {e}")
+        
+        # Generate documents for each entity
+        print("Generating documents...")
+        documents = []
+        for entity_id, entity_type, reg_date in entities:
+            if reg_date:  # Only generate if we have a registration date
+                try:
+                    document_records = self.generate_documents(entity_id, entity_type, reg_date)
+                    if document_records:
+                        documents.extend(document_records)
+                except Exception as e:
+                    print(f"Error generating documents for {entity_id}: {e}")        
+        
         # Convert to DataFrames
         print("\nConverting to DataFrames...")
         data = {
@@ -749,7 +794,10 @@ class TestDataGenerator:
             'jurisdiction_presence': pd.DataFrame(jurisdiction_presence),
             'compliance_events': pd.DataFrame(compliance_events),
             'accounts': pd.DataFrame(accounts),
-            'transactions': pd.DataFrame(transactions)
+            'transactions': pd.DataFrame(transactions),
+            'risk_assessments': pd.DataFrame(risk_assessments),
+            'authorized_persons': pd.DataFrame(authorized_persons),
+            'documents': pd.DataFrame(documents)
         }
         
         return data
@@ -772,6 +820,147 @@ class TestDataGenerator:
         
         # Return transactions directly as a list of dictionaries
         return transactions
+
+    def generate_risk_assessments(self, entity_id: str, entity_type: str, onboarding_date: str) -> List[dict]:
+        """Generate risk assessments for an entity."""
+        assessments = []
+        try:
+            # Parse onboarding date
+            onboarding = datetime.strptime(onboarding_date, '%Y-%m-%d').date()
+            today = datetime.now().date()
+            
+            # Generate 2-4 risk assessments
+            num_assessments = random.randint(2, 4)
+            
+            for i in range(num_assessments):
+                # First assessment on onboarding date
+                if i == 0:
+                    assessment_date = onboarding
+                else:
+                    # Subsequent assessments between onboarding and today
+                    days_since_onboarding = (today - onboarding).days
+                    if days_since_onboarding <= 0:
+                        continue
+                    random_days = random.randint(0, days_since_onboarding)
+                    assessment_date = onboarding + timedelta(days=random_days)
+                
+                # Next review date in future
+                next_review_date = today + timedelta(days=random.randint(30, 365))
+                
+                # Generate risk factors (1-5 scale)
+                risk_factors = {
+                    'geographic_risk': random.randint(1, 5),
+                    'product_risk': random.randint(1, 5),
+                    'customer_risk': random.randint(1, 5),
+                    'channel_risk': random.randint(1, 5)
+                }
+                
+                # Calculate overall risk score
+                risk_score = str(sum(risk_factors.values()) / len(risk_factors))
+                
+                assessment = RiskAssessment(
+                    assessment_id=str(uuid.uuid4()),
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    assessment_date=assessment_date.strftime('%Y-%m-%d'),
+                    risk_rating=random.choice(self.RISK_RATINGS),
+                    risk_score=risk_score,
+                    assessment_type=random.choice(['initial', 'periodic', 'triggered']),
+                    risk_factors=risk_factors,
+                    conducted_by=fake.name(),
+                    approved_by=fake.name(),
+                    findings=fake.text(max_nb_chars=200),
+                    assessor=fake.name(),
+                    next_review_date=next_review_date.strftime('%Y-%m-%d'),
+                    notes=fake.text(max_nb_chars=200) if random.random() < 0.3 else None
+                )
+                assessments.append(self._validate_and_convert_to_dict(assessment))
+        except Exception as e:
+            print(f"Error in generate_risk_assessments: {e}")
+        return assessments
+
+    def generate_authorized_persons(self, entity_id: str, entity_type: str) -> List[dict]:
+        """Generate authorized persons for an entity."""
+        persons = []
+        try:
+            # Generate 1-3 authorized persons
+            num_persons = random.randint(1, 3)
+            
+            for _ in range(num_persons):
+                authorization_start = fake.date_between(start_date='-2y', end_date='today')
+                
+                # 20% chance of having an authorization_end date
+                authorization_end = None
+                if random.random() < 0.2:
+                    authorization_end = fake.date_between(start_date=authorization_start)
+                
+                # Generate contact info
+                contact_info = {
+                    'email': fake.email(),
+                    'phone': fake.phone_number(),
+                    'address': fake.address()
+                }
+                
+                person = AuthorizedPerson(
+                    person_id=str(uuid.uuid4()),
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    name=fake.name(),
+                    title=random.choice(['Director', 'CEO', 'CFO', 'COO', 'Treasurer', 'Secretary']),
+                    authorization_level=random.choice(['full', 'limited', 'view_only']),
+                    authorization_type=random.choice(['primary', 'secondary', 'backup']),
+                    authorization_start=authorization_start.strftime('%Y-%m-%d'),
+                    authorization_end=authorization_end.strftime('%Y-%m-%d') if authorization_end else None,
+                    contact_info=contact_info,
+                    is_active=True,
+                    last_verification_date=authorization_start.strftime('%Y-%m-%d')
+                )
+                persons.append(self._validate_and_convert_to_dict(person))
+        except Exception as e:
+            print(f"Error in generate_authorized_persons: {e}")
+        return persons
+
+    def generate_documents(self, entity_id: str, entity_type: str, registration_date: str) -> List[dict]:
+        """Generate documents for an entity."""
+        documents = []
+        try:
+            # Parse registration date
+            reg_date = datetime.strptime(registration_date, '%Y-%m-%d').date()
+            today = datetime.now().date()
+            
+            # Generate 2-5 documents
+            num_documents = random.randint(2, 5)
+            
+            for _ in range(num_documents):
+                # Document date between registration and today
+                days_since_reg = (today - reg_date).days
+                if days_since_reg <= 0:
+                    continue
+                    
+                document_date = reg_date + timedelta(days=random.randint(0, days_since_reg))
+                
+                # Expiry date in future (if applicable)
+                expiry_date = today + timedelta(days=random.randint(30, 730))  # 1 month to 2 years
+                
+                document = Document(
+                    document_id=str(uuid.uuid4()),
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    document_type=random.choice(['incorporation_certificate', 'license', 'passport', 'utility_bill', 'bank_statement']),
+                    document_number=fake.bothify(text='DOC-#####-???'),
+                    issuing_country=random.choice(self.COUNTRIES),
+                    issuing_authority=random.choice(['Government', 'Bank', 'Utility Company', 'Regulatory Body']),
+                    issue_date=document_date.strftime('%Y-%m-%d'),
+                    expiry_date=expiry_date.strftime('%Y-%m-%d'),
+                    document_category=random.choice(['identity', 'address', 'financial', 'regulatory']),
+                    verification_status='verified',
+                    verification_date=document_date.strftime('%Y-%m-%d'),
+                    notes=fake.text(max_nb_chars=200) if random.random() < 0.3 else None
+                )
+                documents.append(self._validate_and_convert_to_dict(document))
+        except Exception as e:
+            print(f"Error in generate_documents: {e}")
+        return documents
 
 async def main():
     parser = argparse.ArgumentParser(description='Generate test data for AML monitoring')
