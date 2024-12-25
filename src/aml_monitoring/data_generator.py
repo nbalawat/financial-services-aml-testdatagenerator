@@ -15,13 +15,14 @@ from tqdm.asyncio import tqdm
 import numpy as np
 from faker import Faker
 import pandas as pd
+import json
 
 from .database import PostgresHandler, Neo4jHandler
 from .models import (
     Institution, Address, Account, BeneficialOwner, Transaction,
     BusinessType, OperationalStatus, RiskRating, TransactionType,
     TransactionStatus, RiskAssessment, AuthorizedPerson, Document,
-    JurisdictionPresence, ComplianceEvent, ComplianceEventType
+    JurisdictionPresence, ComplianceEvent, ComplianceEventType, Subsidiary
 )
 
 class ProgressTracker:
@@ -267,10 +268,9 @@ class BeneficialOwnerGenerator(BaseGenerator):
                     dob=self.fake.date_of_birth(minimum_age=18).strftime('%Y-%m-%d'),
                     verification_date=self.fake.date_this_year().strftime('%Y-%m-%d'),
                     pep_status=random.choice([True, False]),
-                    sanctions_status=random.choice([True, False]),
-                    adverse_media_status=random.choice([True, False]),
-                    verification_source='KYC_PROVIDER'
+                    sanctions_status=random.choice([True, False])
                 )
+                
                 await tracker.update()
                 yield owner
 
@@ -450,6 +450,61 @@ class ComplianceEventGenerator(BaseGenerator):
             )
             yield event
 
+class SubsidiaryGenerator(BaseGenerator):
+    """Generates subsidiary data for institutions."""
+    
+    async def generate(self, parent_institution_id: str) -> AsyncGenerator[Subsidiary, None]:
+        num_subsidiaries = random.randint(1, 3)
+        
+        for _ in range(num_subsidiaries):
+            incorporation_date = self.fake.date_between(start_date='-10y', end_date='-1y')
+            acquisition_date = self.fake.date_between(start_date=incorporation_date, end_date='today')
+            is_customer = random.choice([True, False])
+            
+            subsidiary_data = {
+                'subsidiary_id': str(uuid.uuid4()),
+                'parent_institution_id': parent_institution_id,
+                'legal_name': self.fake.company(),
+                'tax_id': self.fake.numerify(text='##-#######'),
+                'incorporation_country': self.fake.country_code(),
+                'incorporation_date': incorporation_date.strftime('%Y-%m-%d'),
+                'acquisition_date': acquisition_date.strftime('%Y-%m-%d'),
+                'business_type': random.choice(list(BusinessType)).value,
+                'operational_status': random.choice(list(OperationalStatus)).value,
+                'parent_ownership_percentage': round(random.uniform(51.0, 100.0), 2),
+                'consolidation_status': random.choice(['FULL', 'PARTIAL', 'NONE']),
+                'capital_investment': round(random.uniform(1000000, 100000000), 2),
+                'functional_currency': random.choice(['USD', 'EUR', 'GBP', 'JPY', 'CHF']),
+                'material_subsidiary': random.choice([True, False]),
+                'risk_classification': random.choice(list(RiskRating)).value,
+                'regulatory_status': random.choice(['COMPLIANT', 'UNDER_REVIEW', 'NON_COMPLIANT']),
+                'local_licenses': [self.fake.license_plate() for _ in range(random.randint(1, 3))],
+                'integration_status': random.choice(['FULL', 'PARTIAL', 'IN_PROGRESS', 'NOT_STARTED']),
+                'financial_metrics': {
+                    'revenue': round(random.uniform(1000000, 50000000), 2),
+                    'profit_margin': round(random.uniform(0.05, 0.3), 2),
+                    'asset_value': round(random.uniform(5000000, 200000000), 2)
+                },
+                'reporting_frequency': random.choice(['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL']),
+                'requires_local_audit': random.choice([True, False]),
+                'corporate_governance_model': random.choice(['CENTRALIZED', 'DECENTRALIZED', 'HYBRID']),
+                'is_regulated': random.choice([True, False]),
+                'industry_codes': [str(random.randint(1000, 9999)) for _ in range(random.randint(1, 3))],
+                'is_customer': is_customer
+            }
+            
+            if is_customer:
+                onboarding_date = self.fake.date_between(start_date=acquisition_date, end_date='today')
+                subsidiary_data.update({
+                    'customer_id': str(uuid.uuid4()),
+                    'customer_onboarding_date': onboarding_date.strftime('%Y-%m-%d'),
+                    'customer_risk_rating': random.choice(list(RiskRating)).value,
+                    'customer_status': random.choice(['ACTIVE', 'INACTIVE', 'SUSPENDED'])
+                })
+            
+            subsidiary = Subsidiary(**subsidiary_data)
+            yield subsidiary
+
 class DataGenerator:
     """Main class for orchestrating data generation."""
     
@@ -468,6 +523,7 @@ class DataGenerator:
         self.document_gen = DocumentGenerator(config, self.fake)
         self.jurisdiction_presence_gen = JurisdictionPresenceGenerator(config, self.fake)
         self.compliance_event_gen = ComplianceEventGenerator(config, self.fake)
+        self.subsidiary_gen = SubsidiaryGenerator(config, self.fake)
         
         # Initialize database handlers
         self.postgres_handler = PostgresHandler()
@@ -490,9 +546,22 @@ class DataGenerator:
         
     def _convert_to_dataframe(self, data: List[Any]) -> pd.DataFrame:
         """Convert list of Pydantic models to DataFrame."""
-        if not data:
-            return pd.DataFrame()
-        return pd.DataFrame([item.model_dump() for item in data])
+        # Convert each model to a dict and handle JSON fields
+        rows = []
+        for item in data:
+            row = item.model_dump()
+            # Handle JSONB fields by converting dicts to JSON strings
+            if isinstance(row.get('financial_metrics'), dict):
+                row['financial_metrics'] = json.dumps(row['financial_metrics'])
+            if isinstance(row.get('payment_details'), dict):
+                row['payment_details'] = json.dumps(row['payment_details'])
+            if isinstance(row.get('risk_factors'), dict):
+                row['risk_factors'] = json.dumps(row['risk_factors'])
+            if isinstance(row.get('contact_info'), dict):
+                row['contact_info'] = json.dumps(row['contact_info'])
+            rows.append(row)
+            
+        return pd.DataFrame(rows)
         
     async def persist_batch(self, data: Dict[str, List[Any]], batch_size: int = 1000):
         """Persist a batch of data to both databases."""
@@ -529,7 +598,8 @@ class DataGenerator:
                 'authorized_persons': [],
                 'documents': [],
                 'jurisdiction_presences': [],
-                'compliance_events': []
+                'compliance_events': [],
+                'subsidiaries': []
             }
             batch_size = self.config.get('batch_size', 1000)
             
@@ -566,6 +636,10 @@ class DataGenerator:
                     async for event in self.compliance_event_gen.generate(
                         institution.institution_id, 'institution', account.account_id):
                         data['compliance_events'].append(event)
+                
+                # Generate subsidiaries
+                async for subsidiary in self.subsidiary_gen.generate(institution.institution_id):
+                    data['subsidiaries'].append(subsidiary)
                 
                 # Persist batch if size threshold reached
                 if len(data['institutions']) >= batch_size:

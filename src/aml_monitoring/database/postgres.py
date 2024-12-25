@@ -23,202 +23,248 @@ class PostgresHandler(DatabaseHandler):
     # Table schemas with their required columns and types
     TABLE_SCHEMAS = {
         'institutions': {
-            # Critical fields
-            'institution_id': 'UUID PRIMARY KEY',
-            'legal_name': 'TEXT NOT NULL',
-            'business_type': 'business_type NOT NULL',
-            'incorporation_country': 'TEXT NOT NULL',
-            'incorporation_date': 'DATE NOT NULL',
-            'onboarding_date': 'DATE NOT NULL',
-            'risk_rating': 'risk_rating NOT NULL',
-            'operational_status': 'operational_status NOT NULL',
-            
-            # Optional fields
-            'primary_currency': 'TEXT',
-            'regulatory_status': 'TEXT',
-            'primary_business_activity': 'TEXT',
-            'primary_regulator': 'TEXT',
-            'licenses': 'JSONB',
-            'aml_program_status': 'TEXT',
-            'kyc_refresh_date': 'DATE',
-            'last_audit_date': 'DATE',
-            'next_audit_date': 'DATE',
-            'relationship_manager': 'TEXT',
-            'relationship_status': 'TEXT',
-            'swift_code': 'TEXT',
-            'lei_code': 'TEXT',
-            'tax_id': 'TEXT',
-            'website': 'TEXT',
-            'primary_contact_name': 'TEXT',
-            'primary_contact_email': 'TEXT',
-            'primary_contact_phone': 'TEXT',
-            'annual_revenue': 'DECIMAL',
-            'employee_count': 'INTEGER',
-            'year_established': 'INTEGER',
-            'customer_status': 'TEXT',
-            'last_review_date': 'DATE',
-            'industry_codes': 'JSONB',
-            'public_company': 'BOOLEAN',
-            'stock_symbol': 'TEXT',
-            'stock_exchange': 'TEXT'
+            'institution_id': 'uuid PRIMARY KEY',
+            'legal_name': 'text',
+            'business_type': 'text',
+            'incorporation_country': 'text',
+            'incorporation_date': 'date',
+            'onboarding_date': 'date',
+            'risk_rating': 'text',
+            'operational_status': 'text',
+            'primary_currency': 'text',
+            'regulatory_status': 'text',
+            'primary_business_activity': 'text',
+            'primary_regulator': 'text',
+            'licenses': 'text[]',
+            'aml_program_status': 'text',
+            'kyc_refresh_date': 'date',
+            'last_audit_date': 'date',
+            'next_audit_date': 'date',
+            'relationship_manager': 'text',
+            'relationship_status': 'text',
+            'swift_code': 'text',
+            'lei_code': 'text',
+            'tax_id': 'text',
+            'website': 'text',
+            'primary_contact_name': 'text',
+            'primary_contact_email': 'text',
+            'primary_contact_phone': 'text',
+            'annual_revenue': 'numeric',
+            'employee_count': 'integer',
+            'year_established': 'integer',
+            'customer_status': 'text',
+            'last_review_date': 'date',
+            'industry_codes': 'text[]',
+            'public_company': 'boolean',
+            'stock_symbol': 'text',
+            'stock_exchange': 'text',
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
+        },
+        'subsidiaries': {
+            'subsidiary_id': 'uuid PRIMARY KEY',
+            'parent_institution_id': 'uuid',
+            'legal_name': 'text',
+            'tax_id': 'text',
+            'incorporation_country': 'text',
+            'incorporation_date': 'date',
+            'acquisition_date': 'date',
+            'business_type': 'text',
+            'operational_status': 'text',
+            'parent_ownership_percentage': 'numeric',
+            'consolidation_status': 'text',
+            'capital_investment': 'numeric',
+            'functional_currency': 'text',
+            'material_subsidiary': 'boolean',
+            'risk_classification': 'text',
+            'regulatory_status': 'text',
+            'local_licenses': 'text[]',
+            'integration_status': 'text',
+            'financial_metrics': 'jsonb',
+            'reporting_frequency': 'text',
+            'requires_local_audit': 'boolean',
+            'corporate_governance_model': 'text',
+            'is_regulated': 'boolean',
+            'is_customer': 'boolean',
+            'industry_codes': 'text[]',
+            'customer_id': 'uuid',
+            'customer_onboarding_date': 'date',
+            'customer_risk_rating': 'text',
+            'customer_status': 'text'
         },
         'addresses': {
-            'address_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'address_type': 'TEXT NOT NULL',
-            'address_line1': 'TEXT NOT NULL',
-            'address_line2': 'TEXT',
-            'city': 'TEXT NOT NULL',
-            'state_province': 'TEXT',
-            'postal_code': 'TEXT',
-            'country': 'TEXT NOT NULL',
-            'status': 'TEXT NOT NULL',
-            'effective_from': 'DATE NOT NULL',
-            'effective_to': 'DATE',
-            'primary_address': 'BOOLEAN NOT NULL',
-            'validation_status': 'TEXT NOT NULL',
-            'last_verified': 'DATE NOT NULL',
-            'geo_coordinates': 'JSONB NOT NULL',
-            'timezone': 'TEXT NOT NULL'
-        },
-        'risk_assessments': {
-            'assessment_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'assessment_date': 'DATE NOT NULL',
-            'risk_rating': 'risk_rating NOT NULL',
-            'risk_score': 'TEXT NOT NULL',
-            'assessment_type': 'TEXT NOT NULL',
-            'risk_factors': 'JSONB NOT NULL',
-            'conducted_by': 'TEXT',
-            'approved_by': 'TEXT',
-            'findings': 'TEXT',
-            'assessor': 'TEXT',
-            'next_review_date': 'DATE',
-            'notes': 'TEXT'
-        },
-        'authorized_persons': {
-            'person_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'name': 'TEXT NOT NULL',
-            'title': 'TEXT NOT NULL',
-            'authorization_level': 'TEXT NOT NULL',
-            'authorization_type': 'TEXT NOT NULL',
-            'authorization_start': 'DATE NOT NULL',
-            'authorization_end': 'DATE',
-            'contact_info': 'JSONB NOT NULL',
-            'is_active': 'BOOLEAN NOT NULL',
-            'last_verification_date': 'DATE'
-        },
-        'documents': {
-            'document_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'document_type': 'TEXT NOT NULL',
-            'document_number': 'TEXT NOT NULL',
-            'issuing_authority': 'TEXT NOT NULL',
-            'issuing_country': 'TEXT NOT NULL',
-            'issue_date': 'DATE NOT NULL',
-            'expiry_date': 'DATE NOT NULL',
-            'verification_status': 'TEXT',
-            'verification_date': 'DATE',
-            'document_category': 'TEXT',
-            'notes': 'TEXT'
-        },
-        'jurisdiction_presences': {
-            'presence_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'jurisdiction': 'TEXT NOT NULL',
-            'registration_date': 'DATE NOT NULL',
-            'effective_from': 'DATE NOT NULL',
-            'status': 'TEXT NOT NULL',
-            'local_registration_id': 'TEXT NOT NULL',
-            'effective_to': 'DATE',
-            'local_registration_date': 'DATE',
-            'local_registration_authority': 'TEXT',
-            'notes': 'TEXT'
+            'address_id': 'uuid PRIMARY KEY',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'address_type': 'text',
+            'address_line1': 'text',
+            'address_line2': 'text',
+            'city': 'text',
+            'state_province': 'text',
+            'postal_code': 'text',
+            'country': 'text',
+            'status': 'text',
+            'effective_from': 'date',
+            'effective_to': 'date',
+            'primary_address': 'boolean',
+            'validation_status': 'text',
+            'last_verified': 'date',
+            'geo_coordinates': 'jsonb',
+            'timezone': 'text',
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
         },
         'accounts': {
-            'account_id': 'UUID PRIMARY KEY',
-            'account_number': 'TEXT NOT NULL',
-            'account_type': 'TEXT NOT NULL',
-            'balance': 'DECIMAL NOT NULL',
-            'currency': 'TEXT NOT NULL',
-            'risk_rating': 'risk_rating NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'status': 'TEXT NOT NULL',
-            'opening_date': 'DATE NOT NULL',
-            'entity_id': 'UUID NOT NULL',
-            'last_activity_date': 'DATE',
-            'purpose': 'TEXT',
-            'average_monthly_balance': 'DECIMAL',
-            'custodian_bank': 'TEXT',
-            'account_officer': 'TEXT',
-            'custodian_country': 'TEXT'
-        },
-        'beneficial_owners': {
-            'owner_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'name': 'TEXT NOT NULL',
-            'nationality': 'TEXT NOT NULL',
-            'country_of_residence': 'TEXT NOT NULL',
-            'ownership_percentage': 'DECIMAL NOT NULL',
-            'dob': 'DATE NOT NULL',
-            'verification_date': 'DATE NOT NULL',
-            'pep_status': 'BOOLEAN NOT NULL',
-            'sanctions_status': 'BOOLEAN NOT NULL',
-            'adverse_media_status': 'BOOLEAN NOT NULL',
-            'verification_source': 'TEXT NOT NULL',
-            'notes': 'TEXT'
+            'account_id': 'uuid PRIMARY KEY',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'account_type': 'text',
+            'account_number': 'text',
+            'currency': 'text',
+            'status': 'text',
+            'opening_date': 'date',
+            'balance': 'numeric',
+            'risk_rating': 'text',
+            'last_activity_date': 'date',
+            'purpose': 'text',
+            'average_monthly_balance': 'numeric',
+            'custodian_bank': 'text',
+            'account_officer': 'text',
+            'custodian_country': 'text',
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
         },
         'transactions': {
-            'transaction_id': 'UUID PRIMARY KEY',
-            'transaction_type': 'TEXT NOT NULL',
-            'transaction_date': 'DATE NOT NULL',
-            'value_date': 'DATE',
-            'amount': 'DECIMAL NOT NULL',
-            'currency': 'TEXT NOT NULL',
-            'transaction_status': 'TEXT NOT NULL',
-            'is_debit': 'BOOLEAN NOT NULL',
-            'account_id': 'UUID NOT NULL',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'counterparty_account': 'TEXT',
-            'counterparty_name': 'TEXT',
-            'counterparty_bank': 'TEXT',
-            'counterparty_entity_name': 'TEXT',
-            'originating_country': 'TEXT',
-            'destination_country': 'TEXT',
-            'purpose': 'TEXT',
-            'reference_number': 'TEXT',
-            'screening_alert': 'BOOLEAN',
-            'alert_details': 'TEXT',
-            'risk_score': 'INTEGER',
-            'processing_fee': 'DECIMAL',
-            'exchange_rate': 'DECIMAL',
-            'batch_id': 'TEXT',
-            'check_number': 'TEXT',
-            'wire_reference': 'TEXT'
+            'transaction_id': 'uuid PRIMARY KEY',
+            'transaction_type': 'text',
+            'transaction_date': 'date',
+            'amount': 'numeric',
+            'currency': 'text',
+            'transaction_status': 'text',
+            'is_debit': 'boolean',
+            'account_id': 'uuid',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'counterparty_account': 'text',
+            'counterparty_name': 'text',
+            'counterparty_bank': 'text',
+            'counterparty_entity_name': 'text',
+            'originating_country': 'text',
+            'destination_country': 'text',
+            'purpose': 'text',
+            'reference_number': 'text',
+            'screening_alert': 'boolean',
+            'alert_details': 'text',
+            'risk_score': 'integer',
+            'processing_fee': 'numeric',
+            'exchange_rate': 'numeric',
+            'value_date': 'date',
+            'batch_id': 'text',
+            'check_number': 'text',
+            'wire_reference': 'text',
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
+        },
+        'beneficial_owners': {
+            'owner_id': 'uuid PRIMARY KEY',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'name': 'text',
+            'nationality': 'text',
+            'country_of_residence': 'text',
+            'ownership_percentage': 'numeric',
+            'dob': 'date',
+            'verification_date': 'date',
+            'pep_status': 'boolean',
+            'sanctions_status': 'boolean',
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
+        },
+        'risk_assessments': {
+            'assessment_id': 'uuid PRIMARY KEY',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'assessment_date': 'date',
+            'risk_rating': 'text',
+            'risk_score': 'text',
+            'assessment_type': 'text',
+            'risk_factors': 'jsonb',
+            'conducted_by': 'text',
+            'approved_by': 'text',
+            'findings': 'text',
+            'assessor': 'text',
+            'next_review_date': 'date',
+            'notes': 'text'
+        },
+        'authorized_persons': {
+            'person_id': 'uuid PRIMARY KEY',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'name': 'text',
+            'title': 'text',
+            'authorization_level': 'text',
+            'authorization_type': 'text',
+            'authorization_start': 'date',
+            'authorization_end': 'date',
+            'contact_info': 'jsonb',
+            'is_active': 'boolean',
+            'last_verification_date': 'date'
+        },
+        'documents': {
+            'document_id': 'uuid PRIMARY KEY',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'document_type': 'text',
+            'document_number': 'text',
+            'issuing_authority': 'text',
+            'issuing_country': 'text',
+            'issue_date': 'date',
+            'expiry_date': 'date',
+            'verification_status': 'text',
+            'verification_date': 'date',
+            'document_category': 'text',
+            'notes': 'text',
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
+        },
+        'jurisdiction_presences': {
+            'presence_id': 'uuid PRIMARY KEY',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'jurisdiction': 'text',
+            'registration_date': 'date',
+            'effective_from': 'date',
+            'status': 'text',
+            'local_registration_id': 'text',
+            'effective_to': 'date',
+            'local_registration_date': 'date',
+            'local_registration_authority': 'text',
+            'notes': 'text',
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
         },
         'compliance_events': {
-            'event_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'event_date': 'DATE NOT NULL',
-            'event_type': 'TEXT NOT NULL',
-            'event_description': 'TEXT NOT NULL',
-            'old_state': 'TEXT',
-            'new_state': 'TEXT NOT NULL',
-            'decision': 'TEXT',
-            'decision_date': 'DATE',
-            'decision_maker': 'TEXT',
-            'next_review_date': 'DATE',
-            'related_account_id': 'TEXT NOT NULL',
-            'notes': 'TEXT'
+            'event_id': 'uuid PRIMARY KEY',
+            'entity_id': 'uuid',
+            'entity_type': 'text',
+            'event_date': 'date',
+            'event_type': 'text',
+            'event_description': 'text',
+            'old_state': 'text',
+            'new_state': 'text',
+            'decision': 'text',
+            'decision_date': 'date',
+            'decision_maker': 'text',
+            'next_review_date': 'date',
+            'related_account_id': 'text',
+            'notes': 'text'
         }
     }
     
@@ -246,11 +292,13 @@ class PostgresHandler(DatabaseHandler):
             ('entity_id', 'institutions', 'institution_id')
         ],
         'transactions': [
-            ('account_id', 'accounts', 'account_id'),
-            ('entity_id', 'institutions', 'institution_id')
+            ('account_id', 'accounts', 'account_id')
         ],
         'compliance_events': [
             ('entity_id', 'institutions', 'institution_id')
+        ],
+        'subsidiaries': [
+            ('parent_institution_id', 'institutions', 'institution_id')
         ]
     }
     
@@ -360,6 +408,7 @@ class PostgresHandler(DatabaseHandler):
                 # Create tables in order (base tables first, then dependent tables)
                 table_order = [
                     'institutions',  # Base table
+                    'subsidiaries',
                     'addresses',
                     'risk_assessments',
                     'authorized_persons',
@@ -374,8 +423,10 @@ class PostgresHandler(DatabaseHandler):
                 # Create tables
                 for table_name in table_order:
                     if table_name in self.TABLE_SCHEMAS:
-                        columns = [f"{col} {dtype}"
-                                for col, dtype in self.TABLE_SCHEMAS[table_name].items()]
+                        columns = []
+                        for col, dtype in self.TABLE_SCHEMAS[table_name].items():
+                            columns.append(f"{col} {dtype}")
+
                         create_stmt = f"""
                             CREATE TABLE {table_name} (
                                 {', '.join(columns)}
@@ -566,13 +617,9 @@ class PostgresHandler(DatabaseHandler):
                 for col in json_columns:
                     if col in df.columns:
                         def convert_to_json(x):
-                            if isinstance(x, pd.Series):
-                                x = x.tolist()
-                            if isinstance(x, (list, np.ndarray)):
-                                return json.dumps(x.tolist() if isinstance(x, np.ndarray) else x)
                             if pd.isna(x) or x is None:
                                 return None
-                            if isinstance(x, dict):
+                            if isinstance(x, (list, dict)):
                                 return json.dumps(x)
                             if isinstance(x, str):
                                 try:
@@ -635,7 +682,7 @@ class PostgresHandler(DatabaseHandler):
         """Save a batch of data to PostgreSQL."""
         if not self.is_connected:
             raise ConnectionError("Not connected to database")
-
+    
         # Validate data first - let validation errors propagate up
         await self.validate_data(data)
 
@@ -644,6 +691,7 @@ class PostgresHandler(DatabaseHandler):
                 # Process each table in the correct order (respecting foreign keys)
                 table_order = [
                     'institutions',
+                    'subsidiaries',
                     'addresses',
                     'risk_assessments',
                     'authorized_persons',
@@ -658,27 +706,23 @@ class PostgresHandler(DatabaseHandler):
                 for table in table_order:
                     if table in data and not data[table].empty:
                         df = data[table].copy()  # Make a copy to avoid modifying original
-
+    
                         # Convert dates to proper format
                         date_columns = [col for col, dtype in self.TABLE_SCHEMAS[table].items()
-                                     if 'DATE' in dtype]
+                                     if 'DATE' in dtype.upper()]
                         for col in date_columns:
                             if col in df.columns:
-                                df[col] = pd.to_datetime(df[col]).apply(lambda x: x.date() if pd.notna(x) else None)
-
+                                df[col] = pd.to_datetime(df[col]).dt.date
+    
                         # Convert JSON columns
                         json_columns = [col for col, dtype in self.TABLE_SCHEMAS[table].items()
                                      if 'JSONB' in dtype]
                         for col in json_columns:
                             if col in df.columns:
                                 def convert_to_json(x):
-                                    if isinstance(x, pd.Series):
-                                        x = x.tolist()
-                                    if isinstance(x, (list, np.ndarray)):
-                                        return json.dumps(x.tolist() if isinstance(x, np.ndarray) else x)
                                     if pd.isna(x) or x is None:
                                         return None
-                                    if isinstance(x, dict):
+                                    if isinstance(x, (list, dict)):
                                         return json.dumps(x)
                                     if isinstance(x, str):
                                         try:
@@ -689,7 +733,7 @@ class PostgresHandler(DatabaseHandler):
                                     return json.dumps(str(x))
 
                                 df[col] = df[col].apply(convert_to_json)
-
+    
                         # Convert enum columns
                         enum_columns = {
                             'business_type': {'hedge_fund', 'bank', 'broker_dealer', 'insurance',
@@ -702,7 +746,7 @@ class PostgresHandler(DatabaseHandler):
 
                         for col in enum_columns:
                             if col in df.columns:
-                                df[col] = df[col].apply(lambda x: x.value if hasattr(x, 'value') else x)
+                                df[col] = df[col].apply(lambda x: x.value if hasattr(x, 'value') else str(x).lower())
 
                         # Handle NULL values for optional columns
                         optional_columns = [col for col, dtype in self.TABLE_SCHEMAS[table].items()
@@ -718,17 +762,22 @@ class PostgresHandler(DatabaseHandler):
                             if col in df.columns:
                                 df[col] = pd.to_numeric(df[col], errors='coerce').replace({pd.NA: None, np.nan: None})
 
+                        # Convert any remaining dictionary fields to JSON strings
+                        for col in df.columns:
+                            if col in df.columns and df[col].apply(lambda x: isinstance(x, dict)).any():
+                                df[col] = df[col].apply(lambda x: json.dumps(x) if isinstance(x, dict) else x)
+    
                         # Generate SQL for batch insert with UPSERT
                         columns = list(df.columns)
                         placeholders = [f'${i+1}' for i in range(len(columns))]
-                        primary_key = next(col for col, dtype in self.TABLE_SCHEMAS[table].items() 
+                        primary_key = next(col for col, dtype in self.TABLE_SCHEMAS[table].items()
                                         if 'PRIMARY KEY' in dtype)
-                        
+    
                         insert_sql = f"""
                             INSERT INTO {table} ({', '.join(columns)})
                             VALUES ({', '.join(placeholders)})
-                            ON CONFLICT ({primary_key}) DO UPDATE 
-                            SET {', '.join(f"{col} = EXCLUDED.{col}" 
+                            ON CONFLICT ({primary_key}) DO UPDATE
+                            SET {', '.join(f"{col} = EXCLUDED.{col}"
                                          for col in columns if col != primary_key)}
                         """
 
@@ -830,6 +879,29 @@ class PostgresHandler(DatabaseHandler):
             self._log_operation('insert_data', 
                               {'status': 'failed', 'error': str(e)})
             raise DatabaseError(f"Failed to insert data: {str(e)}")
+
+    async def execute(self, query: str) -> None:
+        """Execute a query without returning results."""
+        if not self.is_connected:
+            raise ConnectionError("Not connected to database")
+
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query)
+        except Exception as e:
+            raise DatabaseError(f"Error executing query: {str(e)}")
+
+    async def fetch_all(self, query: str) -> List[Dict[str, Any]]:
+        """Fetch all rows from the database."""
+        if not self.is_connected:
+            raise ConnectionError("Not connected to database")
+
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetch(query)
+                return [dict(row) for row in result]
+        except Exception as e:
+            raise DatabaseError(f"Error fetching data: {str(e)}")
 
     def _log_operation(self, operation: str, details: Dict[str, Any]) -> None:
         """Log database operations."""

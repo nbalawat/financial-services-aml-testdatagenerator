@@ -95,13 +95,13 @@ class Subsidiary(BaseModel):
     regulatory_status: str
     local_licenses: List[str]
     integration_status: str
-    financial_metrics: Dict[str, Union[int, float]]
+    financial_metrics: Dict[str, float]
     reporting_frequency: str
     requires_local_audit: bool
     corporate_governance_model: str
     is_regulated: bool
     is_customer: bool
-    industry_codes: Optional[List[str]] = None
+    industry_codes: List[str]
     customer_id: Optional[str] = None
     customer_onboarding_date: Optional[str] = None
     customer_risk_rating: Optional[str] = None
@@ -199,9 +199,6 @@ class BeneficialOwner(BaseModel):
     verification_date: str
     pep_status: bool
     sanctions_status: bool
-    adverse_media_status: bool
-    verification_source: str
-    notes: Optional[str] = None
 
 class AuthorizedPerson(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)

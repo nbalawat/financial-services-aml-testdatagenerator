@@ -63,7 +63,7 @@ class DatabaseHandler(ABC):
         valid_tables = {'institutions', 'accounts', 'transactions',
                        'beneficial_owners', 'addresses', 'risk_assessments',
                        'authorized_persons', 'documents', 'jurisdiction_presences',
-                       'compliance_events'}
+                       'compliance_events', 'subsidiaries'}
 
         invalid_tables = set(data.keys()) - valid_tables
         if invalid_tables:
@@ -106,7 +106,10 @@ class DatabaseHandler(ABC):
             'jurisdiction_presences': {'presence_id', 'institution_id', 'country',
                                      'presence_type', 'registration_number'},
             'compliance_events': {'event_id', 'entity_id', 'event_type',
-                                'event_date', 'severity', 'status'}
+                                'event_date', 'severity', 'status'},
+            'subsidiaries': {'subsidiary_id', 'parent_institution_id', 'legal_name',
+                           'tax_id', 'incorporation_country', 'incorporation_date',
+                           'business_type', 'operational_status'}
         }
         return required_fields.get(table_name, set())
 

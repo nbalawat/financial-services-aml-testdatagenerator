@@ -32,6 +32,15 @@ class Neo4jHandler(DatabaseHandler):
                 'stock_exchange'
             ]
         },
+        'BeneficialOwner': {
+            'primary_key': ['owner_id'],
+            'required': [
+                'owner_id', 'entity_id', 'entity_type', 'name', 'nationality',
+                'country_of_residence', 'ownership_percentage', 'dob',
+                'verification_date', 'pep_status', 'sanctions_status'
+            ],
+            'optional': []
+        },
         'RiskAssessment': {
             'primary_key': ['assessment_id'],
             'required': [
@@ -90,6 +99,21 @@ class Neo4jHandler(DatabaseHandler):
                 'risk_score', 'processing_fee', 'exchange_rate', 'value_date',
                 'batch_id', 'check_number', 'wire_reference'
             ]
+        },
+        'Subsidiary': {
+            'primary_key': ['subsidiary_id'],
+            'required': [
+                'subsidiary_id', 'parent_institution_id', 'legal_name', 'tax_id',
+                'incorporation_country', 'incorporation_date', 'acquisition_date',
+                'business_type', 'operational_status', 'parent_ownership_percentage',
+                'consolidation_status', 'capital_investment', 'functional_currency',
+                'material_subsidiary', 'risk_classification', 'regulatory_status',
+                'local_licenses', 'integration_status', 'financial_metrics',
+                'reporting_frequency', 'requires_local_audit', 'corporate_governance_model',
+                'is_regulated', 'is_customer', 'industry_codes', 'customer_id',
+                'customer_onboarding_date', 'customer_risk_rating', 'customer_status'
+            ],
+            'optional': []
         }
     }
     
@@ -192,6 +216,11 @@ class Neo4jHandler(DatabaseHandler):
             'from_label': 'ComplianceEvent',
             'to_label': 'Account',
             'properties': []
+        },
+        'OWNS_SUBSIDIARY': {
+            'from_label': 'Institution',
+            'to_label': 'Subsidiary',
+            'properties': ['ownership_percentage', 'acquisition_date']
         }
     }
 
@@ -373,8 +402,9 @@ class Neo4jHandler(DatabaseHandler):
                                 WITH i
                                 MERGE (c:Country {code: $country})
                                 MERGE (i)-[:INCORPORATED_IN {date: $inc_date}]->(c)
-                                WITH i
-                                MERGE (bd:BusinessDate {date: $inc_date})
+                                WITH i, $inc_date as inc_date
+                                WHERE inc_date IS NOT NULL
+                                MERGE (bd:BusinessDate {date: inc_date})
                                 MERGE (i)-[:INCORPORATED_ON]->(bd)
                             """, {
                                 'id': str(row['institution_id']),
@@ -401,45 +431,102 @@ class Neo4jHandler(DatabaseHandler):
                                 MERGE (s:Subsidiary {subsidiary_id: $id})
                                 ON CREATE SET
                                     s.legal_name = $name,
-                                    s.business_type = $business_type,
+                                    s.tax_id = $tax_id,
                                     s.incorporation_country = $country,
                                     s.incorporation_date = $inc_date,
+                                    s.acquisition_date = $acq_date,
+                                    s.business_type = $type,
                                     s.operational_status = $status,
+                                    s.parent_ownership_percentage = $ownership,
+                                    s.consolidation_status = $consolidation,
+                                    s.capital_investment = $capital,
+                                    s.functional_currency = $currency,
+                                    s.material_subsidiary = $material,
+                                    s.risk_classification = $risk,
                                     s.regulatory_status = $reg_status,
                                     s.local_licenses = $licenses,
-                                    s.industry_codes = $industry_codes,
-                                    s.is_regulated = $is_regulated
+                                    s.integration_status = $integration,
+                                    s.financial_metrics = $metrics,
+                                    s.reporting_frequency = $reporting,
+                                    s.requires_local_audit = $audit,
+                                    s.corporate_governance_model = $governance,
+                                    s.is_regulated = $regulated,
+                                    s.is_customer = $customer,
+                                    s.industry_codes = $industry,
+                                    s.customer_id = $cust_id,
+                                    s.customer_onboarding_date = $onboard_date,
+                                    s.customer_risk_rating = $cust_risk,
+                                    s.customer_status = $cust_status
                                 ON MATCH SET
                                     s.legal_name = $name,
-                                    s.business_type = $business_type,
+                                    s.tax_id = $tax_id,
                                     s.incorporation_country = $country,
                                     s.incorporation_date = $inc_date,
+                                    s.acquisition_date = $acq_date,
+                                    s.business_type = $type,
                                     s.operational_status = $status,
+                                    s.parent_ownership_percentage = $ownership,
+                                    s.consolidation_status = $consolidation,
+                                    s.capital_investment = $capital,
+                                    s.functional_currency = $currency,
+                                    s.material_subsidiary = $material,
+                                    s.risk_classification = $risk,
                                     s.regulatory_status = $reg_status,
                                     s.local_licenses = $licenses,
-                                    s.industry_codes = $industry_codes,
-                                    s.is_regulated = $is_regulated
+                                    s.integration_status = $integration,
+                                    s.financial_metrics = $metrics,
+                                    s.reporting_frequency = $reporting,
+                                    s.requires_local_audit = $audit,
+                                    s.corporate_governance_model = $governance,
+                                    s.is_regulated = $regulated,
+                                    s.is_customer = $customer,
+                                    s.industry_codes = $industry,
+                                    s.customer_id = $cust_id,
+                                    s.customer_onboarding_date = $onboard_date,
+                                    s.customer_risk_rating = $cust_risk,
+                                    s.customer_status = $cust_status
                                 WITH p, s
-                                MERGE (p)-[:HAS_SUBSIDIARY {
+                                MERGE (p)-[:OWNS_SUBSIDIARY {
                                     ownership_percentage: $ownership,
-                                    relationship_start_date: $inc_date
+                                    acquisition_date: $acq_date
                                 }]->(s)
                                 WITH s
                                 MERGE (c:Country {code: $country})
-                                MERGE (s)-[:INCORPORATED_IN {date: $inc_date}]->(c)
+                                MERGE (s)-[:INCORPORATED_IN]->(c)
+                                WITH s, $inc_date as inc_date
+                                WHERE inc_date IS NOT NULL
+                                MERGE (bd:BusinessDate {date: inc_date})
+                                MERGE (s)-[:INCORPORATED_ON]->(bd)
                             """, {
                                 'id': str(row['subsidiary_id']),
                                 'parent_id': str(row['parent_institution_id']),
                                 'name': row['legal_name'],
-                                'business_type': row['business_type'],
+                                'tax_id': row['tax_id'],
                                 'country': row['incorporation_country'],
                                 'inc_date': row['incorporation_date'],
+                                'acq_date': row['acquisition_date'],
+                                'type': row['business_type'],
                                 'status': row['operational_status'],
-                                'reg_status': row.get('regulatory_status'),
-                                'licenses': json.dumps(row.get('local_licenses', [])),
-                                'industry_codes': json.dumps(row.get('industry_codes', [])),
-                                'is_regulated': bool(row.get('is_regulated', False)),
-                                'ownership': float(row.get('ownership_percentage', 100.0))
+                                'ownership': float(row['parent_ownership_percentage']),
+                                'consolidation': row['consolidation_status'],
+                                'capital': float(row['capital_investment']),
+                                'currency': row['functional_currency'],
+                                'material': bool(row['material_subsidiary']),
+                                'risk': row['risk_classification'],
+                                'reg_status': row['regulatory_status'],
+                                'licenses': json.dumps(row['local_licenses']),
+                                'integration': row['integration_status'],
+                                'metrics': json.dumps(row['financial_metrics']),
+                                'reporting': row['reporting_frequency'],
+                                'audit': bool(row['requires_local_audit']),
+                                'governance': row['corporate_governance_model'],
+                                'regulated': bool(row['is_regulated']),
+                                'customer': bool(row['is_customer']),
+                                'industry': json.dumps(row.get('industry_codes', [])),
+                                'cust_id': row.get('customer_id'),
+                                'onboard_date': row.get('customer_onboarding_date'),
+                                'cust_risk': row.get('customer_risk_rating'),
+                                'cust_status': row.get('customer_status')
                             })
                 
                 # Save accounts
@@ -467,11 +554,15 @@ class Neo4jHandler(DatabaseHandler):
                                     a.open_date = $open_date,
                                     a.close_date = $close_date,
                                     a.risk_rating = $risk_rating
+                                WITH a, $open_date as open_date
+                                WHERE open_date IS NOT NULL
+                                MERGE (bd:BusinessDate {date: open_date})
+                                MERGE (a)-[:OPENED_ON]->(bd)
                                 WITH a
                                 MATCH (i:Institution {institution_id: $entity_id})
                                 MERGE (i)-[:HAS_ACCOUNT]->(a)
                                 WITH a
-                                MATCH (bd:BusinessDate {date: $open_date})
+                                MERGE (bd:BusinessDate {date: $open_date})
                                 MERGE (a)-[:OPENED_ON]->(bd)
                             """, {
                                 'id': str(row['account_id']),
@@ -505,8 +596,9 @@ class Neo4jHandler(DatabaseHandler):
                                 MATCH (a:Account {account_id: $account_id})
                                 MERGE (t)-[:BELONGS_TO]->(a)
                                 MERGE (a)-[:TRANSACTED]->(t)
-                                WITH t
-                                MATCH (bd:BusinessDate {date: $date})
+                                WITH t, $date as date
+                                WHERE date IS NOT NULL
+                                MERGE (bd:BusinessDate {date: date})
                                 MERGE (t)-[:OCCURRED_ON]->(bd)
                             """, {
                                 'id': str(row['transaction_id']),
@@ -537,8 +629,7 @@ class Neo4jHandler(DatabaseHandler):
                                     bo.dob = $dob,
                                     bo.verification_date = $verification_date,
                                     bo.pep_status = $pep,
-                                    bo.sanctions_status = $sanctions,
-                                    bo.adverse_media_status = $adverse_media
+                                    bo.sanctions_status = $sanctions
                                 ON MATCH SET
                                     bo.name = $name,
                                     bo.nationality = $nationality,
@@ -547,8 +638,7 @@ class Neo4jHandler(DatabaseHandler):
                                     bo.dob = $dob,
                                     bo.verification_date = $verification_date,
                                     bo.pep_status = $pep,
-                                    bo.sanctions_status = $sanctions,
-                                    bo.adverse_media_status = $adverse_media
+                                    bo.sanctions_status = $sanctions
                                 WITH e, bo
                                 MERGE (e)-[:OWNED_BY {
                                     ownership_percentage: $ownership,
@@ -567,8 +657,7 @@ class Neo4jHandler(DatabaseHandler):
                                 'dob': row['dob'],
                                 'verification_date': row['verification_date'],
                                 'pep': bool(row['pep_status']),
-                                'sanctions': bool(row['sanctions_status']),
-                                'adverse_media': bool(row['adverse_media_status'])
+                                'sanctions': bool(row['sanctions_status'])
                             })
                 
                 # Save addresses
@@ -646,8 +735,9 @@ class Neo4jHandler(DatabaseHandler):
                                     r.next_review_date = $next_review
                                 WITH e, r
                                 MERGE (e)-[:HAS_RISK_ASSESSMENT]->(r)
-                                WITH r
-                                MATCH (bd:BusinessDate {date: $date})
+                                WITH r, $date as date
+                                WHERE date IS NOT NULL
+                                MERGE (bd:BusinessDate {date: date})
                                 MERGE (r)-[:ASSESSED_ON]->(bd)
                             """, {
                                 'id': str(row['assessment_id']),
@@ -744,8 +834,9 @@ class Neo4jHandler(DatabaseHandler):
                                     d.verification_date = $verification_date
                                 WITH e, d
                                 MERGE (e)-[:HAS_DOCUMENT {document_type: $type}]->(d)
-                                WITH d
-                                MATCH (bd:BusinessDate {date: $issue_date})
+                                WITH d, $issue_date as issue_date
+                                WHERE issue_date IS NOT NULL
+                                MERGE (bd:BusinessDate {date: issue_date})
                                 MERGE (d)-[:ISSUED_ON]->(bd)
                                 WITH d
                                 MERGE (c:Country {code: $country})
@@ -793,8 +884,9 @@ class Neo4jHandler(DatabaseHandler):
                                     ce.resolution_date = $resolution_date
                                 WITH e, ce
                                 MERGE (e)-[:HAS_COMPLIANCE_EVENT]->(ce)
-                                WITH ce
-                                MATCH (bd:BusinessDate {date: $date})
+                                WITH ce, $date as date
+                                WHERE date IS NOT NULL
+                                MERGE (bd:BusinessDate {date: date})
                                 MERGE (ce)-[:OCCURRED_ON]->(bd)
                                 WITH ce
                                 MATCH (a:Account {account_id: $related_account_id})
@@ -903,6 +995,17 @@ class Neo4jHandler(DatabaseHandler):
             'compliance_events': {
                 'event_id', 'entity_id', 'event_type',
                 'event_date', 'event_description', 'new_state'
+            },
+            'subsidiaries': {
+                'subsidiary_id', 'parent_institution_id', 'legal_name', 'tax_id',
+                'incorporation_country', 'incorporation_date', 'acquisition_date',
+                'business_type', 'operational_status', 'parent_ownership_percentage',
+                'consolidation_status', 'capital_investment', 'functional_currency',
+                'material_subsidiary', 'risk_classification', 'regulatory_status',
+                'local_licenses', 'integration_status', 'financial_metrics',
+                'reporting_frequency', 'requires_local_audit', 'corporate_governance_model',
+                'is_regulated', 'is_customer', 'industry_codes', 'customer_id',
+                'customer_onboarding_date', 'customer_risk_rating', 'customer_status'
             }
         }
         return required_fields.get(table_name, set())
