@@ -12,12 +12,12 @@ from aml_monitoring.database.neo4j import Neo4jHandler
 # Load test environment variables
 load_dotenv('test.env')
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# Configure pytest-asyncio
+def pytest_configure(config):
+    """Configure pytest-asyncio defaults."""
+    config.option.asyncio_mode = "strict"
+    # Set the default fixture loop scope to function
+    config.option.asyncio_default_fixture_loop_scope = "function"
 
 @pytest_asyncio.fixture(scope="function")
 async def postgres_handler():

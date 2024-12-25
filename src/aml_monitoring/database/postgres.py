@@ -8,9 +8,10 @@ import json
 from datetime import datetime
 import numpy as np
 import logging
+from asyncpg import create_pool
 
 from .base import DatabaseHandler, DatabaseError
-from .exceptions import ConnectionError, ValidationError, SchemaError, BatchError
+from .exceptions import ConnectionError, ValidationError, SchemaError, BatchError, DatabaseInitializationError
 from ..models import (
     Institution, Address, Account, BeneficialOwner, Transaction,
     BusinessType, OperationalStatus, RiskRating
@@ -25,12 +26,12 @@ class PostgresHandler(DatabaseHandler):
             # Critical fields
             'institution_id': 'UUID PRIMARY KEY',
             'legal_name': 'TEXT NOT NULL',
-            'business_type': 'TEXT NOT NULL',
+            'business_type': 'business_type NOT NULL',
             'incorporation_country': 'TEXT NOT NULL',
             'incorporation_date': 'DATE NOT NULL',
             'onboarding_date': 'DATE NOT NULL',
-            'risk_rating': 'risk_rating NOT NULL',  # Using enum type
-            'operational_status': 'operational_status NOT NULL',  # Using enum type
+            'risk_rating': 'risk_rating NOT NULL',
+            'operational_status': 'operational_status NOT NULL',
             
             # Optional fields
             'primary_currency': 'TEXT',
@@ -61,18 +62,35 @@ class PostgresHandler(DatabaseHandler):
             'stock_symbol': 'TEXT',
             'stock_exchange': 'TEXT'
         },
+        'addresses': {
+            'address_id': 'UUID PRIMARY KEY',
+            'entity_id': 'UUID NOT NULL',
+            'entity_type': 'TEXT NOT NULL',
+            'address_type': 'TEXT NOT NULL',
+            'address_line1': 'TEXT NOT NULL',
+            'address_line2': 'TEXT',
+            'city': 'TEXT NOT NULL',
+            'state_province': 'TEXT',
+            'postal_code': 'TEXT',
+            'country': 'TEXT NOT NULL',
+            'status': 'TEXT NOT NULL',
+            'effective_from': 'DATE NOT NULL',
+            'effective_to': 'DATE',
+            'primary_address': 'BOOLEAN NOT NULL',
+            'validation_status': 'TEXT NOT NULL',
+            'last_verified': 'DATE NOT NULL',
+            'geo_coordinates': 'JSONB NOT NULL',
+            'timezone': 'TEXT NOT NULL'
+        },
         'risk_assessments': {
-            # Critical fields
             'assessment_id': 'UUID PRIMARY KEY',
             'entity_id': 'UUID NOT NULL',
             'entity_type': 'TEXT NOT NULL',
             'assessment_date': 'DATE NOT NULL',
-            'risk_rating': 'risk_rating NOT NULL',  # Using enum type
+            'risk_rating': 'risk_rating NOT NULL',
             'risk_score': 'TEXT NOT NULL',
             'assessment_type': 'TEXT NOT NULL',
             'risk_factors': 'JSONB NOT NULL',
-            
-            # Optional fields
             'conducted_by': 'TEXT',
             'approved_by': 'TEXT',
             'findings': 'TEXT',
@@ -95,7 +113,6 @@ class PostgresHandler(DatabaseHandler):
             'last_verification_date': 'DATE'
         },
         'documents': {
-            # Critical fields
             'document_id': 'UUID PRIMARY KEY',
             'entity_id': 'UUID NOT NULL',
             'entity_type': 'TEXT NOT NULL',
@@ -105,15 +122,12 @@ class PostgresHandler(DatabaseHandler):
             'issuing_country': 'TEXT NOT NULL',
             'issue_date': 'DATE NOT NULL',
             'expiry_date': 'DATE NOT NULL',
-            
-            # Optional fields
             'verification_status': 'TEXT',
             'verification_date': 'DATE',
             'document_category': 'TEXT',
             'notes': 'TEXT'
         },
         'jurisdiction_presences': {
-            # Critical fields
             'presence_id': 'UUID PRIMARY KEY',
             'entity_id': 'UUID NOT NULL',
             'entity_type': 'TEXT NOT NULL',
@@ -122,102 +136,28 @@ class PostgresHandler(DatabaseHandler):
             'effective_from': 'DATE NOT NULL',
             'status': 'TEXT NOT NULL',
             'local_registration_id': 'TEXT NOT NULL',
-            
-            # Optional fields
             'effective_to': 'DATE',
             'local_registration_date': 'DATE',
             'local_registration_authority': 'TEXT',
             'notes': 'TEXT'
         },
-        'compliance_events': {
-            'event_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'event_date': 'DATE NOT NULL',
-            'event_type': 'TEXT NOT NULL',
-            'event_description': 'TEXT NOT NULL',
-            'old_state': 'TEXT',
-            'new_state': 'TEXT NOT NULL',
-            'decision': 'TEXT',
-            'decision_date': 'DATE',
-            'decision_maker': 'TEXT',
-            'next_review_date': 'DATE',
-            'related_account_id': 'UUID NOT NULL',
-            'notes': 'TEXT'
-        },
-        'addresses': {
-            'address_id': 'UUID PRIMARY KEY',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            'address_type': 'TEXT NOT NULL',
-            'address_line1': 'TEXT NOT NULL',
-            'address_line2': 'TEXT',
-            'city': 'TEXT NOT NULL',
-            'state_province': 'TEXT NOT NULL',
-            'postal_code': 'TEXT NOT NULL',
-            'country': 'TEXT NOT NULL',
-            'status': 'TEXT NOT NULL',
-            'effective_from': 'DATE NOT NULL',
-            'effective_to': 'DATE',
-            'primary_address': 'BOOLEAN NOT NULL',
-            'validation_status': 'TEXT NOT NULL',
-            'last_verified': 'DATE NOT NULL',
-            'geo_coordinates': 'JSONB NOT NULL',
-            'timezone': 'TEXT NOT NULL'
-        },
         'accounts': {
-            # Critical fields
             'account_id': 'UUID PRIMARY KEY',
             'account_number': 'TEXT NOT NULL',
             'account_type': 'TEXT NOT NULL',
             'balance': 'DECIMAL NOT NULL',
             'currency': 'TEXT NOT NULL',
-            'risk_rating': 'risk_rating NOT NULL',  # Using enum type
-            'entity_id': 'UUID NOT NULL',
+            'risk_rating': 'risk_rating NOT NULL',
             'entity_type': 'TEXT NOT NULL',
             'status': 'TEXT NOT NULL',
             'opening_date': 'DATE NOT NULL',
-            'institution_id': 'UUID NOT NULL REFERENCES institutions(institution_id)',
-
-            # Optional fields
+            'entity_id': 'UUID NOT NULL',
             'last_activity_date': 'DATE',
             'purpose': 'TEXT',
             'average_monthly_balance': 'DECIMAL',
             'custodian_bank': 'TEXT',
             'account_officer': 'TEXT',
             'custodian_country': 'TEXT'
-        },
-        'transactions': {
-            # Critical fields
-            'transaction_id': 'UUID PRIMARY KEY',
-            'transaction_type': 'transaction_type NOT NULL',  # Using enum type
-            'transaction_date': 'DATE NOT NULL',
-            'amount': 'DECIMAL NOT NULL',
-            'currency': 'TEXT NOT NULL',
-            'transaction_status': 'transaction_status NOT NULL',  # Using enum type
-            'is_debit': 'BOOLEAN NOT NULL',
-            'account_id': 'UUID NOT NULL',
-            'entity_id': 'UUID NOT NULL',
-            'entity_type': 'TEXT NOT NULL',
-            
-            # Optional fields
-            'counterparty_account': 'TEXT',
-            'counterparty_name': 'TEXT',
-            'counterparty_bank': 'TEXT',
-            'counterparty_entity_name': 'TEXT',
-            'originating_country': 'TEXT',
-            'destination_country': 'TEXT',
-            'purpose': 'TEXT',
-            'reference_number': 'TEXT',
-            'screening_alert': 'BOOLEAN DEFAULT FALSE',
-            'alert_details': 'TEXT',
-            'risk_score': 'INTEGER',
-            'processing_fee': 'DECIMAL',
-            'exchange_rate': 'DECIMAL',
-            'value_date': 'DATE',
-            'batch_id': 'TEXT',
-            'check_number': 'TEXT',
-            'wire_reference': 'TEXT'
         },
         'beneficial_owners': {
             'owner_id': 'UUID PRIMARY KEY',
@@ -232,55 +172,131 @@ class PostgresHandler(DatabaseHandler):
             'pep_status': 'BOOLEAN NOT NULL',
             'sanctions_status': 'BOOLEAN NOT NULL',
             'adverse_media_status': 'BOOLEAN NOT NULL',
-            'verification_source': 'TEXT NOT NULL'
+            'verification_source': 'TEXT NOT NULL',
+            'notes': 'TEXT'
+        },
+        'transactions': {
+            'transaction_id': 'UUID PRIMARY KEY',
+            'transaction_type': 'TEXT NOT NULL',
+            'transaction_date': 'DATE NOT NULL',
+            'value_date': 'DATE',
+            'amount': 'DECIMAL NOT NULL',
+            'currency': 'TEXT NOT NULL',
+            'transaction_status': 'TEXT NOT NULL',
+            'is_debit': 'BOOLEAN NOT NULL',
+            'account_id': 'UUID NOT NULL',
+            'entity_id': 'UUID NOT NULL',
+            'entity_type': 'TEXT NOT NULL',
+            'counterparty_account': 'TEXT',
+            'counterparty_name': 'TEXT',
+            'counterparty_bank': 'TEXT',
+            'counterparty_entity_name': 'TEXT',
+            'originating_country': 'TEXT',
+            'destination_country': 'TEXT',
+            'purpose': 'TEXT',
+            'reference_number': 'TEXT',
+            'screening_alert': 'BOOLEAN',
+            'alert_details': 'TEXT',
+            'risk_score': 'INTEGER',
+            'processing_fee': 'DECIMAL',
+            'exchange_rate': 'DECIMAL',
+            'batch_id': 'TEXT',
+            'check_number': 'TEXT',
+            'wire_reference': 'TEXT'
+        },
+        'compliance_events': {
+            'event_id': 'UUID PRIMARY KEY',
+            'entity_id': 'UUID NOT NULL',
+            'entity_type': 'TEXT NOT NULL',
+            'event_date': 'DATE NOT NULL',
+            'event_type': 'TEXT NOT NULL',
+            'event_description': 'TEXT NOT NULL',
+            'old_state': 'TEXT',
+            'new_state': 'TEXT NOT NULL',
+            'decision': 'TEXT',
+            'decision_date': 'DATE',
+            'decision_maker': 'TEXT',
+            'next_review_date': 'DATE',
+            'related_account_id': 'TEXT NOT NULL',
+            'notes': 'TEXT'
         }
     }
     
     # Foreign key constraints to be added after table creation
     FOREIGN_KEY_CONSTRAINTS = {
-        'transactions': [
-            ('account_id', 'accounts', 'account_id')
-        ],
         'addresses': [
             ('entity_id', 'institutions', 'institution_id')
         ],
+        'risk_assessments': [
+            ('entity_id', 'institutions', 'institution_id')
+        ],
+        'authorized_persons': [
+            ('entity_id', 'institutions', 'institution_id')
+        ],
+        'documents': [
+            ('entity_id', 'institutions', 'institution_id')
+        ],
+        'jurisdiction_presences': [
+            ('entity_id', 'institutions', 'institution_id')
+        ],
         'accounts': [
-            ('entity_id', 'institutions', 'institution_id'),
-            ('institution_id', 'institutions', 'institution_id')
+            ('entity_id', 'institutions', 'institution_id')
         ],
         'beneficial_owners': [
+            ('entity_id', 'institutions', 'institution_id')
+        ],
+        'transactions': [
+            ('account_id', 'accounts', 'account_id'),
+            ('entity_id', 'institutions', 'institution_id')
+        ],
+        'compliance_events': [
             ('entity_id', 'institutions', 'institution_id')
         ]
     }
     
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize PostgreSQL handler."""
         super().__init__()
+        self.config = config or {
+            'host': 'localhost',
+            'port': 5432,
+            'user': 'aml_user',
+            'password': 'aml_password',
+            'database': 'aml_monitoring'
+        }
         self.pool = None
         self.is_connected = False
         self.logger = logging.getLogger(__name__)
+
+
         
     async def connect(self) -> None:
-        """Establish database connection."""
+        """Establish connection to PostgreSQL database."""
         try:
-            host = os.getenv('POSTGRES_HOST', 'localhost')
-            port = os.getenv('POSTGRES_PORT', '5432')
-            db = os.getenv('POSTGRES_DB', 'aml_monitoring')
-            user = os.getenv('POSTGRES_USER', 'postgres')
-            password = os.getenv('POSTGRES_PASSWORD', '')
-            
-            self.pool = await asyncpg.create_pool(
-                f'postgresql://{user}:{password}@{host}:{port}/{db}',
-                min_size=1, max_size=5
-            )
-            
-            # Test connection
-            async with self.pool.acquire() as conn:
-                await conn.execute('SELECT 1')
-            
-            self.is_connected = True
-            self._log_operation('connect', {'status': 'success'})
-            
+            if not self.is_connected:
+                # Use config values with environment variable fallbacks
+                host = os.getenv('POSTGRES_HOST', self.config.get('host', 'localhost'))
+                port = os.getenv('POSTGRES_PORT', str(self.config.get('port', '5432')))
+                db = os.getenv('POSTGRES_DB', self.config.get('database', 'aml_monitoring'))
+                user = os.getenv('POSTGRES_USER', self.config.get('user', 'postgres'))
+                password = os.getenv('POSTGRES_PASSWORD', self.config.get('password', ''))
+                
+                self.pool = await asyncpg.create_pool(
+                    f'postgresql://{user}:{password}@{host}:{port}/{db}',
+                    min_size=1,
+                    max_size=5
+                )
+                
+                # Test connection
+                async with self.pool.acquire() as conn:
+                    await conn.execute('SELECT 1')
+                
+                self.is_connected = True
+                self._log_operation('connect', {'status': 'success'})
+                
+            else:
+                self._log_operation('connect', {'status': 'skipped', 'message': 'Already connected'})
+                
         except Exception as e:
             self._log_operation('connect', {'status': 'failed', 'error': str(e)})
             raise ConnectionError(f"Failed to connect to PostgreSQL: {str(e)}")
@@ -340,87 +356,110 @@ class PostgresHandler(DatabaseHandler):
                     await conn.execute(f"""
                         DROP TABLE IF EXISTS {table_name} CASCADE
                     """)
-                
+
+                # Create tables in order (base tables first, then dependent tables)
+                table_order = [
+                    'institutions',  # Base table
+                    'addresses',
+                    'risk_assessments',
+                    'authorized_persons',
+                    'documents',
+                    'jurisdiction_presences',
+                    'accounts',
+                    'beneficial_owners',
+                    'transactions',
+                    'compliance_events'
+                ]
+
                 # Create tables
-                for table_name, schema in self.TABLE_SCHEMAS.items():
-                    columns = [f"{col} {dtype}" 
-                             for col, dtype in schema.items()]
-                    create_stmt = f"""
-                        CREATE TABLE {table_name} (
-                            {', '.join(columns)}
-                        )
-                    """
-                    await conn.execute(create_stmt)
-                    
+                for table_name in table_order:
+                    if table_name in self.TABLE_SCHEMAS:
+                        columns = [f"{col} {dtype}"
+                                for col, dtype in self.TABLE_SCHEMAS[table_name].items()]
+                        create_stmt = f"""
+                            CREATE TABLE {table_name} (
+                                {', '.join(columns)}
+                            )
+                        """
+                        await conn.execute(create_stmt)
+
                 # Add foreign key constraints
                 for table_name, constraints in self.FOREIGN_KEY_CONSTRAINTS.items():
                     for column, ref_table, ref_column in constraints:
                         await conn.execute(f"""
-                            ALTER TABLE {table_name} 
-                            ADD CONSTRAINT fk_{table_name}_{column} 
-                            FOREIGN KEY ({column}) 
+                            ALTER TABLE {table_name}
+                            ADD CONSTRAINT fk_{table_name}_{column}
+                            FOREIGN KEY ({column})
                             REFERENCES {ref_table}({ref_column})
                             ON DELETE CASCADE
                         """)
-            
+
             self._log_operation('create_schema', {'status': 'success'})
-            
+
         except Exception as e:
-            self._log_operation('create_schema', 
+            self._log_operation('create_schema',
                               {'status': 'failed', 'error': str(e)})
             raise SchemaError(f"Failed to create schema: {str(e)}")
     
     async def initialize_database(self) -> None:
         """Initialize the database with required tables and enums."""
+        if not self.is_connected:
+            raise ConnectionError("Not connected to database")
+
         try:
             async with self.pool.acquire() as conn:
+                # Drop existing enums and tables
+                await conn.execute("""
+                    DROP TABLE IF EXISTS transactions CASCADE;
+                    DROP TABLE IF EXISTS accounts CASCADE;
+                    DROP TABLE IF EXISTS beneficial_owners CASCADE;
+                    DROP TABLE IF EXISTS risk_assessments CASCADE;
+                    DROP TABLE IF EXISTS addresses CASCADE;
+                    DROP TABLE IF EXISTS authorized_persons CASCADE;
+                    DROP TABLE IF EXISTS documents CASCADE;
+                    DROP TABLE IF EXISTS jurisdiction_presences CASCADE;
+                    DROP TABLE IF EXISTS institutions CASCADE;
+                    DROP TABLE IF EXISTS compliance_events CASCADE;
+                    DROP TYPE IF EXISTS business_type CASCADE;
+                    DROP TYPE IF EXISTS operational_status CASCADE;
+                    DROP TYPE IF EXISTS risk_rating CASCADE;
+                    DROP TYPE IF EXISTS transaction_type CASCADE;
+                    DROP TYPE IF EXISTS transaction_status CASCADE;
+                """)
+
                 # Create enum types
                 await conn.execute("""
-                    DO $$ BEGIN
-                        -- Create business_type enum if it doesn't exist
-                        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'business_type') THEN
-                            CREATE TYPE business_type AS ENUM (
-                                'hedge_fund', 'bank', 'broker_dealer', 'insurance',
-                                'asset_manager', 'pension_fund', 'other'
-                            );
-                        END IF;
-                        
-                        -- Create operational_status enum if it doesn't exist
-                        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'operational_status') THEN
-                            CREATE TYPE operational_status AS ENUM (
-                                'active', 'dormant', 'liquidating'
-                            );
-                        END IF;
-                        
-                        -- Create risk_rating enum if it doesn't exist
-                        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'risk_rating') THEN
-                            CREATE TYPE risk_rating AS ENUM (
-                                'low', 'medium', 'high'
-                            );
-                        END IF;
-                        
-                        -- Create transaction_type enum if it doesn't exist
-                        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transaction_type') THEN
-                            CREATE TYPE transaction_type AS ENUM (
-                                'ach', 'wire', 'check', 'lockbox'
-                            );
-                        END IF;
-                        
-                        -- Create transaction_status enum if it doesn't exist
-                        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transaction_status') THEN
-                            CREATE TYPE transaction_status AS ENUM (
-                                'completed', 'pending', 'failed', 'reversed'
-                            );
-                        END IF;
-                    END $$;
+                    CREATE TYPE business_type AS ENUM (
+                        'hedge_fund', 'bank', 'broker_dealer', 'insurance',
+                        'asset_manager', 'pension_fund', 'other'
+                    );
+
+                    CREATE TYPE operational_status AS ENUM (
+                        'active', 'dormant', 'liquidating'
+                    );
+
+                    CREATE TYPE risk_rating AS ENUM (
+                        'low', 'medium', 'high'
+                    );
+
+                    CREATE TYPE transaction_type AS ENUM (
+                        'ach', 'wire', 'check', 'lockbox'
+                    );
+
+                    CREATE TYPE transaction_status AS ENUM (
+                        'completed', 'pending', 'failed', 'reversed'
+                    );
                 """)
-            
+
+                # Create tables
+                await self.create_schema()
+
             self._log_operation('initialize_database', {'status': 'success'})
-            
+
         except Exception as e:
-            self._log_operation('initialize_database', 
+            self._log_operation('initialize_database',
                               {'status': 'failed', 'error': str(e)})
-            raise SchemaError(f"Failed to initialize database: {str(e)}")
+            raise DatabaseInitializationError(f"Failed to initialize database: {str(e)}")
     
     async def _validate_dataframe_schema(self, table_name: str, df: pd.DataFrame) -> None:
         """Validate DataFrame schema for a specific table."""
@@ -652,8 +691,15 @@ class PostgresHandler(DatabaseHandler):
                                 df[col] = df[col].apply(convert_to_json)
 
                         # Convert enum columns
-                        enum_columns = [col for col, dtype in self.TABLE_SCHEMAS[table].items()
-                                     if any(enum in dtype for enum in ['business_type', 'operational_status', 'risk_rating', 'transaction_type', 'transaction_status'])]
+                        enum_columns = {
+                            'business_type': {'hedge_fund', 'bank', 'broker_dealer', 'insurance',
+                                    'asset_manager', 'pension_fund', 'other'},
+                            'operational_status': {'active', 'dormant', 'liquidating'},
+                            'risk_rating': {'low', 'medium', 'high'},
+                            'transaction_type': {'ach', 'wire', 'check', 'lockbox'},
+                            'transaction_status': {'completed', 'pending', 'failed', 'reversed'}
+                        }
+
                         for col in enum_columns:
                             if col in df.columns:
                                 df[col] = df[col].apply(lambda x: x.value if hasattr(x, 'value') else x)
@@ -663,7 +709,14 @@ class PostgresHandler(DatabaseHandler):
                                          if 'NOT NULL' not in dtype]
                         for col in optional_columns:
                             if col in df.columns:
-                                df[col] = df[col].replace({pd.NA: None, '': None})
+                                df[col] = df[col].replace({pd.NA: None, np.nan: None, '': None})
+
+                        # Convert numeric columns
+                        numeric_columns = [col for col, dtype in self.TABLE_SCHEMAS[table].items()
+                                        if any(num_type in dtype.upper() for num_type in ['INTEGER', 'DECIMAL', 'NUMERIC'])]
+                        for col in numeric_columns:
+                            if col in df.columns:
+                                df[col] = pd.to_numeric(df[col], errors='coerce').replace({pd.NA: None, np.nan: None})
 
                         # Generate SQL for batch insert with UPSERT
                         columns = list(df.columns)
@@ -695,8 +748,9 @@ class PostgresHandler(DatabaseHandler):
     async def wipe_clean(self) -> None:
         """Wipe all data from the database while preserving the schema."""
         try:
+            # Ensure connection
             if not self.is_connected:
-                raise ConnectionError("Not connected to database")
+                await self.connect()
 
             async with self.pool.acquire() as conn:
                 # Disable foreign key checks temporarily
@@ -712,8 +766,7 @@ class PostgresHandler(DatabaseHandler):
             self._log_operation('wipe_clean', {'status': 'success'})
             
         except Exception as e:
-            self._log_operation('wipe_clean', 
-                              {'status': 'failed', 'error': str(e)})
+            self._log_operation('wipe_clean', {'status': 'failed', 'error': str(e)})
             raise DatabaseError(f"Failed to wipe database: {str(e)}")
 
     async def healthcheck(self) -> bool:

@@ -121,6 +121,7 @@ class DatabaseHandler(ABC):
             log_entry.update(details)
         
         self.logger.info(f"Database operation: {log_entry}")
+    
         
     @abstractmethod
     async def healthcheck(self) -> bool:
@@ -135,3 +136,8 @@ class DatabaseHandler(ABC):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.disconnect()
+
+    @abstractmethod
+    async def wipe_clean(self) -> None:
+        """Wipe all data from the database while preserving the schema."""
+        pass

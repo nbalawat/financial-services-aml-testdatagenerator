@@ -607,6 +607,10 @@ class Neo4jHandler(DatabaseHandler):
                               {'status': 'failed', 'error': str(e)})
             raise BatchError(f"Failed to save batch: {str(e)}", [])
     
+    async def save_to_neo4j(self, data: Dict[str, pd.DataFrame]) -> None:
+        """Save data to Neo4j database."""
+        await self.save_batch(data)
+    
     async def wipe_clean(self) -> None:
         """Wipe all data from the database while preserving indexes and constraints."""
         try:
@@ -652,40 +656,40 @@ class Neo4jHandler(DatabaseHandler):
                 'licenses', 'industry_codes', 'public_company'
             },
             'accounts': {
-                'account_id', 'account_number', 'account_type', 'balance',
-                'currency', 'status', 'institution_id'
+                'account_id', 'entity_id', 'entity_type', 'account_type',
+                'account_number', 'currency', 'status', 'balance'
             },
             'transactions': {
                 'transaction_id', 'account_id', 'transaction_type', 'transaction_date',
                 'amount', 'currency', 'transaction_status', 'is_debit'
             },
             'beneficial_owners': {
-                'owner_id', 'institution_id', 'name', 'ownership_percentage',
-                'nationality', 'pep_status'
+                'owner_id', 'entity_id', 'entity_type', 'name',
+                'ownership_percentage', 'nationality', 'pep_status'
             },
             'addresses': {
-                'address_id', 'institution_id', 'address_type', 'country',
-                'city', 'postal_code'
+                'address_id', 'entity_id', 'entity_type', 'address_type',
+                'country', 'city', 'postal_code'
             },
             'risk_assessments': {
-                'assessment_id', 'institution_id', 'assessment_date',
+                'assessment_id', 'entity_id', 'assessment_date',
                 'risk_factors', 'risk_rating'
             },
             'authorized_persons': {
-                'person_id', 'institution_id', 'name', 'title',
-                'authorization_date', 'authorization_type'
+                'person_id', 'entity_id', 'name', 'title',
+                'authorization_start', 'authorization_type'
             },
             'documents': {
-                'document_id', 'institution_id', 'document_type',
-                'issue_date', 'expiry_date', 'status'
+                'document_id', 'entity_id', 'document_type',
+                'issue_date', 'expiry_date', 'verification_status'
             },
             'jurisdiction_presences': {
-                'presence_id', 'institution_id', 'country',
-                'presence_type', 'registration_date'
+                'presence_id', 'entity_id', 'jurisdiction',
+                'registration_date', 'status'
             },
             'compliance_events': {
-                'event_id', 'institution_id', 'event_type',
-                'event_date', 'severity', 'status'
+                'event_id', 'entity_id', 'event_type',
+                'event_date', 'event_description', 'new_state'
             }
         }
         return required_fields.get(table_name, set())

@@ -24,8 +24,6 @@ from .models import (
     JurisdictionPresence, ComplianceEvent, ComplianceEventType
 )
 
-from .db_handlers import PostgresHandler, Neo4jHandler
-
 class ProgressTracker:
     """Tracks progress of data generation with tqdm."""
     
@@ -477,13 +475,18 @@ class DataGenerator:
         
     async def initialize_db(self):
         """Initialize database connections."""
-        await self.postgres_handler.initialize()
-        await self.neo4j_handler.initialize()
+        # First connect to databases
+        await self.postgres_handler.connect()
+        await self.neo4j_handler.connect()
+        
+        # Then initialize schemas
+        await self.postgres_handler.initialize_database()
+        # await self.neo4j_handler.initialize_database()
         
     async def close_db(self):
         """Close database connections."""
-        await self.postgres_handler.close()
-        await self.neo4j_handler.close()
+        await self.postgres_handler.disconnect()
+        await self.neo4j_handler.disconnect()
         
     def _convert_to_dataframe(self, data: List[Any]) -> pd.DataFrame:
         """Convert list of Pydantic models to DataFrame."""
@@ -516,9 +519,6 @@ class DataGenerator:
     async def generate_all(self) -> None:
         """Generate all data types and persist them."""
         try:
-            # Initialize databases
-            await self.initialize_db()
-            
             data = {
                 'institutions': [],
                 'addresses': [],

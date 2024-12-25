@@ -4,10 +4,12 @@ import pytest
 import pandas as pd
 from datetime import datetime
 import uuid
+import asyncio
 
 from aml_monitoring.database.exceptions import (
     ConnectionError, ValidationError, SchemaError, BatchError
 )
+from aml_monitoring.database.postgres import PostgresHandler
 
 class TestPostgresHandler:
     """Test suite for PostgreSQL database handler."""
@@ -135,3 +137,39 @@ class TestPostgresHandler:
         await postgres_handler.save_batch({'accounts': account_df}, batch_size=100)
         await postgres_handler.save_batch({'accounts': account_df}, batch_size=500)
         await postgres_handler.save_batch({'accounts': account_df}, batch_size=1000)
+
+@pytest.mark.asyncio
+async def test_check_schema():
+    """Test to inspect database schema"""
+    handler = PostgresHandler()
+    await handler.connect()
+    
+    async with handler.pool.acquire() as conn:
+        # Check if table exists
+        table_exists = await conn.fetch("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'institutions'
+            );
+        """)
+        print(f"\nTable exists: {table_exists[0]['exists']}")
+        
+        # Get all columns and their types
+        columns = await conn.fetch("""
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_name = 'institutions'
+            ORDER BY ordinal_position;
+        """)
+        
+        print("\nCurrent table structure:")
+        for col in columns:
+            print(f"Column: {col['column_name']}")
+            print(f"Type: {col['data_type']}")
+            print(f"Nullable: {col['is_nullable']}")
+            print("---")
+        
+        await handler.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(test_check_schema())

@@ -23,7 +23,7 @@ from aml_monitoring.models import (
 def test_config() -> Dict[str, Any]:
     """Test configuration for data generation."""
     return {
-        'num_institutions': 1,
+        'num_institutions': 5,
         'min_transactions_per_account': 2,
         'max_transactions_per_account': 5,
         'high_risk_percentage': 0.2,
@@ -183,17 +183,20 @@ async def test_data_generator_dataframe_conversion(data_generator):
 @pytest.mark.asyncio
 async def test_data_generator_persist_batch(data_generator):
     """Test batch persistence."""
-    # Add debugging prints
+    # Debug information
     print("\nDebugging PostgresHandler:")
-    print(f"Type of postgres_handler: {type(data_generator.postgres_handler)}")
-    print(f"Available methods: {dir(data_generator.postgres_handler)}")
+    print(f"Type: {type(data_generator.postgres_handler)}")
+    print(f"Base classes: {type(data_generator.postgres_handler).__bases__}")
+    print(f"MRO: {type(data_generator.postgres_handler).__mro__}")
+    print(f"Methods: {dir(data_generator.postgres_handler)}")
+    print(f"Has wipe_clean: {'wipe_clean' in dir(data_generator.postgres_handler)}")
     
     # Create test institutions
     institutions = []
     generator = InstitutionGenerator(data_generator.config)
     async for inst in generator.generate():
         institutions.append(inst)
-    
+   
     # Initialize database connections
     await data_generator.initialize_db()
     
@@ -210,28 +213,45 @@ async def test_data_generator_persist_batch(data_generator):
 @pytest.mark.asyncio
 async def test_generate_all(data_generator):
     """Test complete data generation process."""
-    await data_generator.initialize_db()
-    
     try:
+        # Initialize DB first
+        await data_generator.initialize_db()
+        
+        # Clean existing data
+        await data_generator.postgres_handler.wipe_clean()
+        if data_generator.neo4j_handler.is_connected:
+            await data_generator.neo4j_handler.wipe_clean()
+        
         # Generate all data
         await data_generator.generate_all()
         
+        # Reconnect to postgres if needed
+        if not data_generator.postgres_handler.is_connected:
+            await data_generator.postgres_handler.connect()
+
         # Verify data was saved
         async with data_generator.postgres_handler.pool.acquire() as conn:
             # Check institutions
             result = await conn.fetch("SELECT COUNT(*) FROM institutions")
             assert result[0]['count'] == data_generator.config['num_institutions']
-            
+
             # Check accounts
             result = await conn.fetch("SELECT COUNT(*) FROM accounts")
             assert result[0]['count'] > 0
-            
+
             # Check transactions
             result = await conn.fetch("SELECT COUNT(*) FROM transactions")
             assert result[0]['count'] > 0
-            
+
+    except Exception as e:
+        print(f"Error during test: {str(e)}")
+        raise
+
     finally:
         # Clean up
-        await data_generator.postgres_handler.wipe_clean()
-        await data_generator.neo4j_handler.wipe_clean()
-        await data_generator.close_db()
+        if data_generator.postgres_handler.is_connected:
+            await data_generator.postgres_handler.wipe_clean()
+            await data_generator.postgres_handler.disconnect()
+        if data_generator.neo4j_handler.is_connected:
+            await data_generator.neo4j_handler.wipe_clean()
+            await data_generator.neo4j_handler.disconnect()
