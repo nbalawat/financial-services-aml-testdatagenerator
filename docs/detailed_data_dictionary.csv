@@ -1,0 +1,246 @@
+Table,Column,Data Type,Required,Description,Constraints,Examples
+Entity,entity_id,UUID,Yes,"Universally Unique Identifier (UUID) for the entity. This is a 128-bit identifier that is unique across the entire system, ensuring no two entities can have the same ID.",Primary Key,"123e4567-e89b-12d3-a456-426614174000"
+Entity,entity_type,string,Yes,"Specifies the classification of the entity in the system. Must be either 'institution' or 'subsidiary'. This field determines how the entity is treated in the system and what additional information is required. Institutions are top-level entities, while subsidiaries are owned by institutions.",Must be either 'institution' or 'subsidiary',"'institution' (for a bank), 'subsidiary' (for a bank's trading division)"
+Entity,parent_entity_id,UUID,No,"For subsidiaries, this references the UUID of the parent institution. Must be NULL for institutions. This field establishes the ownership hierarchy in the system. Used for consolidated risk assessment and reporting.",Foreign Key to Entity.entity_id. Must be NULL for institutions.,"123e4567-e89b-12d3-a456-426614174000 (for a subsidiary), NULL (for an institution)"
+Entity,created_at,datetime,Yes,"Timestamp marking when the entity was first created in the system. Used for audit trails and tracking entity lifecycle. Includes both date and time components with timezone information.",System-generated timestamp,"2024-01-15T14:30:00Z"
+Entity,updated_at,datetime,Yes,"Timestamp of the most recent update to any entity information. Automatically updated whenever any field in the entity record changes. Used for audit trails and data freshness assessment.",System-generated timestamp,"2024-12-20T09:15:30Z"
+Entity,deleted_at,datetime,No,"Timestamp when the entity was marked as deleted (soft deletion). NULL indicates an active entity. When set, the entity is considered inactive but its data is preserved for historical and audit purposes.",NULL for active entities,"2024-11-30T16:45:00Z, NULL (for active entities)"
+
+Institution,institution_id,string,Yes,"Primary identifier for the institution. While UUIDs are used internally, this may be a more human-readable identifier used in business contexts. Must be unique across all institutions.",Primary Key,"INS-001, BNK-2024-001"
+Institution,legal_name,string,Yes,"Official registered name of the institution as it appears on legal documents. This should match incorporation documents and regulatory filings. Used in all official communications and documentation.",Must match legal registration,"Goldman Sachs Group Inc., HSBC Holdings plc"
+Institution,business_type,enum,Yes,"Classification of the institution's primary business model. This affects regulatory requirements, risk assessment, and compliance procedures. Valid types:
+- hedge_fund: Investment funds using complex strategies
+- bank: Traditional banking institutions
+- broker_dealer: Securities trading firms
+- insurance: Insurance providers
+- asset_manager: Investment management firms
+- pension_fund: Retirement fund managers
+- other: Other financial institutions",Must be one of the defined BusinessType enum values,"'bank' (for traditional banks), 'hedge_fund' (for investment funds)"
+Institution,incorporation_country,string,Yes,"Country where the institution is legally registered and incorporated. Used for jurisdictional compliance and risk assessment. Should use standardized country codes or names.",ISO country codes recommended,"USA, GBR, SGP"
+Institution,incorporation_date,string,Yes,"Date when the institution was legally incorporated or registered. Used to determine operational history and regulatory requirements. Must be a valid date in YYYY-MM-DD format.",Must be before onboarding_date,"1995-03-15"
+Institution,onboarding_date,string,Yes,"Date when the institution was onboarded as a client or partner. Marks the beginning of the business relationship. Must be after incorporation date. Used for relationship duration tracking and periodic reviews.",Must be after incorporation_date,"2024-01-10"
+Institution,risk_rating,enum,Yes,"Overall risk assessment rating of the institution. Determines monitoring intensity and compliance requirements. Levels:
+- low: Minimal risk, standard monitoring
+- medium: Moderate risk, enhanced monitoring
+- high: Significant risk, intensive monitoring",Must be one of: low, medium, high,"'low' (for well-regulated banks), 'high' (for institutions in high-risk jurisdictions)"
+Institution,operational_status,enum,Yes,"Current operational state of the institution. Affects monitoring requirements and risk assessment. States:
+- active: Fully operational
+- dormant: Temporarily inactive
+- liquidating: In process of closing",Must be one of: active, dormant, liquidating,"'active' (for normal operations), 'liquidating' (for closing institutions)"
+Institution,primary_currency,string,No,"Main currency used in operations. Important for transaction monitoring and risk assessment. Should use standard currency codes.",ISO currency codes recommended,"USD, EUR, GBP"
+Institution,regulatory_status,string,No,"Current standing with regulatory authorities. Indicates compliance status and any special regulatory conditions or restrictions.",,"'Fully Compliant', 'Under Review'"
+Institution,primary_business_activity,string,No,"Detailed description of main business operations and focus areas. Used for understanding business model and associated risks.",,"'Commercial Banking', 'Investment Management'"
+Institution,primary_regulator,string,No,"Main regulatory body overseeing the institution. Important for compliance reporting and regulatory communications.",,"'SEC', 'FCA', 'MAS'"
+Institution,licenses,array[string],No,"List of all operational licenses held by the institution. Each entry should include license type and issuing authority. Critical for compliance and operational authorization tracking.",Array of license identifiers,"['US-BD-12345', 'UK-FCA-789']"
+Institution,aml_program_status,string,No,"Current state of the institution's Anti-Money Laundering program. Indicates compliance with AML requirements and any remediation needs.",,"'Compliant', 'Under Enhancement'"
+Institution,kyc_refresh_date,string,No,"Date of most recent Know Your Customer information update. Used for compliance tracking and scheduling reviews.",YYYY-MM-DD format,"2024-06-15"
+Institution,last_audit_date,string,No,"Date of most recent regulatory or compliance audit. Used for audit scheduling and compliance tracking.",YYYY-MM-DD format,"2023-12-01"
+Institution,next_audit_date,string,No,"Scheduled date for next audit. Used for audit planning and resource allocation.",YYYY-MM-DD format,"2024-12-01"
+Institution,relationship_manager,string,No,"Name of assigned relationship manager. Primary point of contact for institutional relationship.",,"'John Smith', 'Sarah Johnson'"
+Institution,relationship_status,string,No,"Current state of business relationship. Indicates any special handling or attention needed.",,"'Active', 'Under Review'"
+Institution,swift_code,string,No,"SWIFT/BIC code for international transfers. Must follow SWIFT format standards.",11 or 8 character SWIFT format,"CHASUS33, BARCGB22"
+Institution,lei_code,string,No,"Legal Entity Identifier code. Global standard for financial entity identification.",20-character LEI format,"549300GX4FPMFF91RJ37"
+Institution,tax_id,string,No,"Tax identification number in jurisdiction of incorporation. Format varies by country.",Country-specific format,"12-3456789 (US EIN)"
+Institution,website,string,No,"Official website URL. Used for verification and communication purposes.",Valid URL format,"https://www.bankname.com"
+Institution,primary_contact_name,string,No,"Name of primary business contact person. Main point of contact for operational matters.",,"'Jane Doe'"
+Institution,primary_contact_email,string,No,"Email address for primary contact. Used for official communications.",Valid email format,"jane.doe@bankname.com"
+Institution,primary_contact_phone,string,No,"Phone number for primary contact. Including country code.",International format,"+1-212-555-0123"
+Institution,annual_revenue,float,No,"Annual revenue in base currency. Used for business size assessment and risk categorization.",Positive number,"1500000000.00"
+Institution,employee_count,integer,No,"Total number of employees. Indicator of institutional size and complexity.",Positive integer,"5000"
+Institution,year_established,integer,No,"Year when institution first began operations. May differ from incorporation date.",Valid year,"1995"
+Institution,customer_status,string,No,"Current status as a customer. Indicates relationship stage and any special conditions.",,"'Active', 'Onboarding'"
+Institution,last_review_date,string,No,"Date of last relationship review. Used for periodic review scheduling.",YYYY-MM-DD format,"2024-01-15"
+Institution,industry_codes,array[string],No,"Standard industry classification codes. Used for sector analysis and risk assessment.",Array of standard codes,"['SIC-6021', 'NAICS-522110']"
+Institution,public_company,boolean,Yes,"Indicates if company is publicly traded. Affects reporting requirements and risk assessment.",Default: false,"true, false"
+Institution,stock_symbol,string,No,"Stock market trading symbol. Required if publicly traded.",,"'GS', 'HSBC'"
+Institution,stock_exchange,string,No,"Primary stock exchange where shares are traded.",,"'NYSE', 'LSE'"
+
+Transaction,transaction_id,string,Yes,"Unique identifier for the transaction. Used for tracking and referencing individual transactions throughout their lifecycle.",Primary Key,"TXN-2024-001"
+Transaction,transaction_type,enum,Yes,"Classification of transaction method. Each type has specific processing and monitoring requirements:
+- ach: Automated Clearing House transfers
+- wire: Wire transfers (typically international)
+- check: Check payments
+- lockbox: Automated payment processing service",Must be one of: ach, wire, check, lockbox,"'wire' (for international transfers), 'ach' (for domestic transfers)"
+Transaction,transaction_date,string,Yes,"Date and time when transaction was initiated. Used for temporal analysis and reporting.",YYYY-MM-DD format,"2024-01-15"
+Transaction,amount,float,Yes,"Monetary value of the transaction in the specified currency. Used for threshold monitoring and risk assessment.",Must be positive,"50000.00"
+Transaction,currency,string,Yes,"Currency of the transaction amount. Must use standard currency codes for consistency.",ISO currency code,"USD, EUR"
+Transaction,transaction_status,enum,Yes,"Current state of the transaction in its lifecycle:
+- completed: Successfully processed
+- pending: In progress
+- failed: Processing failed
+- reversed: Transaction reversed",Must be one of: completed, pending, failed, reversed,"'completed' (successful), 'pending' (in process)"
+Transaction,is_debit,boolean,Yes,"Indicates if transaction is a debit (true) or credit (false) from the perspective of the primary account.",Boolean,"true (for outgoing), false (for incoming)"
+Transaction,account_id,string,Yes,"Reference to the primary account involved in the transaction.",Foreign Key to Account.account_id,"ACC-001"
+Transaction,entity_id,string,Yes,"Reference to the entity owning the primary account.",Foreign Key to Entity.entity_id,"ENT-001"
+Transaction,entity_type,string,Yes,"Type of entity owning the primary account. Must match the entity's classification.",Must match entity_type,"'institution', 'subsidiary'"
+Transaction,debit_account_id,string,Yes,"Account from which money is being withdrawn.",Foreign Key to Account.account_id,"ACC-001"
+Transaction,credit_account_id,string,Yes,"Account receiving the money.",Foreign Key to Account.account_id,"ACC-002"
+Transaction,counterparty_account,string,No,"Account number of the external counterparty. Used for counterparty tracking and risk assessment.",,"87654321"
+Transaction,counterparty_name,string,No,"Name of the counterparty. Important for sanctions screening and monitoring.",,"'Acme Corporation'"
+Transaction,counterparty_bank,string,No,"Name of the counterparty's bank. Used for bank relationship monitoring.",,"'Chase Bank'"
+Transaction,counterparty_entity_name,string,No,"Legal entity name of the counterparty if different from counterparty_name.",,"'Acme Holdings Ltd'"
+Transaction,originating_country,string,No,"Country where transaction originated. Used for geographic risk assessment.",ISO country code,"USA"
+Transaction,destination_country,string,No,"Country where transaction is destined. Used for geographic risk assessment.",ISO country code,"GBR"
+Transaction,purpose,string,No,"Stated purpose of the transaction. Used for transaction monitoring and risk assessment.",,"'Invoice Payment', 'Investment'"
+Transaction,reference_number,string,No,"External reference number for transaction. Used for reconciliation and tracking.",,"'INV-2024-001'"
+Transaction,screening_alert,boolean,Yes,"Indicates if transaction triggered any compliance screening alerts.",Default: false,"true, false"
+Transaction,alert_details,string,No,"Details of any screening alerts triggered. Includes alert type and severity.",,"'Sanctions Match - Medium Risk'"
+Transaction,risk_score,integer,No,"Calculated risk score for the transaction based on various factors.",0-100 scale,"75"
+Transaction,processing_fee,float,No,"Fee charged for processing the transaction.",Non-negative,"25.00"
+Transaction,exchange_rate,float,No,"Exchange rate used if currency conversion involved.",Positive number,"1.25"
+Transaction,value_date,string,No,"Date when funds are available to the recipient.",YYYY-MM-DD format,"2024-01-16"
+Transaction,batch_id,string,No,"Identifier for batch processing if part of a batch transaction.",,"BATCH-2024-001"
+Transaction,check_number,string,No,"Check number for check transactions.",,"1001"
+Transaction,wire_reference,string,No,"Reference number for wire transfers. Format varies by bank.",,"WIRE-2024-001"
+
+BeneficialOwner,owner_id,string,Yes,"Unique identifier for the beneficial owner. Used for tracking ownership across multiple entities and maintaining ownership history.",Primary Key,"BO-2024-001"
+BeneficialOwner,entity_id,string,Yes,"Reference to the entity owned. Links the beneficial owner to specific institutions or subsidiaries for ownership tracking.",Foreign Key to Entity.entity_id,"ENT-001"
+BeneficialOwner,entity_type,string,Yes,"Type of entity owned. Helps in differentiating between ownership of institutions versus subsidiaries for regulatory reporting.",Must be either 'institution' or 'subsidiary',"'institution'"
+BeneficialOwner,name,string,Yes,"Full legal name of the beneficial owner. Used for identification and screening purposes. Should match government-issued identification.",Must match legal documentation,"'John A. Smith'"
+BeneficialOwner,nationality,string,Yes,"Primary citizenship of the beneficial owner. Used for sanctions screening and regulatory reporting. Should use standardized country codes.",ISO country code recommended,"USA, GBR"
+BeneficialOwner,country_of_residence,string,Yes,"Current country of residence. May differ from nationality. Used for tax reporting and risk assessment.",ISO country code recommended,"CHE"
+BeneficialOwner,ownership_percentage,float,Yes,"Percentage of ownership in the entity. Used for determining control and regulatory reporting requirements. Critical for identifying controlling interests.",Between 0 and 100,"25.5"
+BeneficialOwner,dob,string,Yes,"Date of birth. Used for identification verification and age-related compliance checks.",YYYY-MM-DD format,"1975-03-15"
+BeneficialOwner,verification_date,string,Yes,"Date when ownership information was last verified. Used for KYC refresh scheduling and compliance monitoring.",YYYY-MM-DD format,"2024-01-15"
+BeneficialOwner,pep_status,boolean,Yes,"Politically Exposed Person status. Indicates whether the owner is classified as a PEP, requiring enhanced due diligence.",Boolean,"true (for government officials), false"
+BeneficialOwner,sanctions_status,boolean,Yes,"Indicates if the owner appears on any sanctions lists. Triggers enhanced monitoring and possible restrictions.",Boolean,"true (for sanctioned individuals), false"
+
+Address,address_id,string,Yes,"Unique identifier for each address record. Used for tracking address history and changes over time.",Primary Key,"ADDR-2024-001"
+Address,entity_id,string,Yes,"Reference to the entity associated with this address. Links addresses to specific institutions or subsidiaries.",Foreign Key to Entity.entity_id,"ENT-001"
+Address,entity_type,string,Yes,"Type of entity the address belongs to. Helps in organizing addresses for different entity types.",Must be either 'institution' or 'subsidiary',"'institution'"
+Address,address_type,string,Yes,"Classification of address purpose. Indicates how the address is used by the entity.","Must be one of: registered, operational, mailing, branch","'registered'"
+Address,address_line1,string,Yes,"Primary address line containing street number and name. Main component of the physical location.",Not empty,"'123 Financial Street'"
+Address,address_line2,string,No,"Secondary address information such as suite or floor number. Provides additional location detail.",,"'Suite 4500'"
+Address,city,string,Yes,"City or municipality name. Used for geographic analysis and jurisdiction determination.",Valid city name,"'New York'"
+Address,state_province,string,Yes,"State, province, or region. Important for regulatory jurisdiction and tax purposes.",Valid administrative region,"'NY'"
+Address,postal_code,string,Yes,"Postal or ZIP code. Used for geographic sorting and validation.",Country-specific format,"'10004'"
+Address,country,string,Yes,"Country where address is located. Critical for jurisdictional compliance and reporting.",ISO country code recommended,"USA"
+Address,status,string,Yes,"Current status of the address record. Indicates if address is active and verified.","Must be one of: active, inactive, pending_verification","'active'"
+Address,effective_from,string,Yes,"Date from which this address became valid. Used for maintaining address history.",YYYY-MM-DD format,"2024-01-01"
+Address,effective_to,string,No,"End date of address validity. Null for current addresses. Used for address history tracking.",YYYY-MM-DD format,"2025-12-31"
+Address,primary_address,boolean,Yes,"Indicates if this is the main address for the given address_type. Each type can have only one primary address.",Boolean,"true"
+Address,validation_status,string,Yes,"Status of address verification process. Indicates reliability of address data.","Must be one of: verified, unverified, failed","'verified'"
+Address,last_verified,string,Yes,"Date of most recent address verification. Used for scheduling re-verification.",YYYY-MM-DD format,"2024-01-15"
+Address,latitude,float,Yes,"Geographic latitude coordinate. Used for location analysis and mapping.",Decimal degrees,"-40.7128"
+Address,longitude,float,Yes,"Geographic longitude coordinate. Used for location analysis and mapping.",Decimal degrees,"74.0060"
+Address,timezone,string,Yes,"Time zone of the address location. Important for operational hours and reporting timing.",IANA time zone format,"America/New_York"
+
+AuthorizedPerson,person_id,string,Yes,"Unique identifier for each authorized person. Used for tracking individuals with authority across entities.",Primary Key,"AUTH-2024-001"
+AuthorizedPerson,entity_id,string,Yes,"Reference to the entity for which the person has authorization. Links authorized individuals to specific institutions or subsidiaries.",Foreign Key to Entity.entity_id,"ENT-001"
+AuthorizedPerson,entity_type,string,Yes,"Type of entity the person is authorized for. Helps in managing different authorization requirements for institutions vs subsidiaries.",Must be either 'institution' or 'subsidiary',"'institution'"
+AuthorizedPerson,name,string,Yes,"Full legal name of the authorized person. Used for identification and documentation. Should match government ID.",Must match legal documentation,"'Sarah J. Johnson'"
+AuthorizedPerson,title,string,Yes,"Official position or role within the entity. Indicates level of authority and responsibility.",,"'Chief Financial Officer'"
+AuthorizedPerson,authorization_level,string,Yes,"Level of authority granted. Determines what actions the person can authorize.","Must be one of: full, limited, specific","'full'"
+AuthorizedPerson,authorization_type,string,Yes,"Type of authorization granted. Specifies the nature of authorized activities.","Must be one of: financial, operational, legal","'financial'"
+AuthorizedPerson,authorization_start,string,Yes,"Date when authorization became effective. Used for tracking authorization validity.",YYYY-MM-DD format,"2024-01-01"
+AuthorizedPerson,authorization_end,string,No,"End date of authorization if temporary. Null for ongoing authorizations.",YYYY-MM-DD format,"2025-12-31"
+AuthorizedPerson,contact_info,json,Yes,"Contact information including email, phone, and address. Stored as JSON for flexibility.",Valid JSON object,"{'email': 'sarah.j@company.com', 'phone': '+1-212-555-0123'}"
+AuthorizedPerson,is_active,boolean,Yes,"Indicates if the authorization is currently active. Used for access control and monitoring.",Boolean,"true"
+AuthorizedPerson,last_verification_date,string,No,"Date when authorization was last verified. Used for periodic review scheduling.",YYYY-MM-DD format,"2024-01-15"
+AuthorizedPerson,nationality,string,Yes,"Citizenship of the authorized person. Important for compliance and reporting requirements.",ISO country code recommended,"USA"
+
+Document,document_id,string,Yes,"Unique identifier for each document record. Used for tracking all entity-related documentation.",Primary Key,"DOC-2024-001"
+Document,entity_id,string,Yes,"Reference to the entity the document belongs to. Links documents to specific institutions or subsidiaries.",Foreign Key to Entity.entity_id,"ENT-001"
+Document,entity_type,string,Yes,"Type of entity the document is associated with. Helps in organizing documents by entity type.",Must be either 'institution' or 'subsidiary',"'institution'"
+Document,document_type,string,Yes,"Classification of document. Indicates the nature and purpose of the document.","Must be one of: incorporation, license, regulatory, identification","'incorporation'"
+Document,document_number,string,Yes,"Official reference number of the document. Used for verification and tracking.",Format varies by document type,"'CERT-123456'"
+Document,issuing_authority,string,Yes,"Organization that issued the document. Important for verification and validity checking.",,"'Delaware Secretary of State'"
+Document,issuing_country,string,Yes,"Country where document was issued. Used for jurisdictional validation.",ISO country code recommended,"USA"
+Document,issue_date,string,Yes,"Date when document was issued. Used for validity tracking and renewal planning.",YYYY-MM-DD format,"2024-01-01"
+Document,expiry_date,string,Yes,"Date when document expires. Critical for compliance and renewal management.",YYYY-MM-DD format,"2025-12-31"
+Document,verification_status,string,No,"Status of document verification process. Indicates reliability of document.","Must be one of: verified, pending, failed","'verified'"
+Document,verification_date,string,No,"Date when document was last verified. Used for scheduling re-verification.",YYYY-MM-DD format,"2024-01-15"
+Document,document_category,string,No,"Broad classification category. Helps in organizing documents for different purposes.","Examples: legal, financial, regulatory","'legal'"
+Document,notes,string,No,"Additional information about the document. Used for special instructions or observations.",,"'Original stored in secure vault'"
+
+ComplianceEvent,event_id,string,Yes,"Unique identifier for each compliance event. Used for tracking all compliance-related activities.",Primary Key,"CE-2024-001"
+ComplianceEvent,entity_id,string,Yes,"Reference to the entity involved in the compliance event. Links events to specific institutions or subsidiaries.",Foreign Key to Entity.entity_id,"ENT-001"
+ComplianceEvent,entity_type,string,Yes,"Type of entity involved in the event. Helps in tracking compliance events by entity type.",Must be either 'institution' or 'subsidiary',"'institution'"
+ComplianceEvent,event_date,string,Yes,"Date when the compliance event occurred. Used for timeline analysis and reporting.",YYYY-MM-DD format,"2024-01-15"
+ComplianceEvent,event_type,string,Yes,"Classification of the compliance event. Determines handling and follow-up requirements. Types include:
+- onboarding: Initial client acceptance
+- account_opened: New account creation
+- account_closed: Account closure
+- periodic_review: Scheduled review
+- risk_level_change: Risk rating change
+- enhanced_due_diligence: Additional investigation
+- kyc_update: Customer information update
+- adverse_media: Negative news found
+- sanctions_screening: Sanctions check
+- document_expiry: Document expiration
+- ownership_change: Change in ownership
+- remediation: Issue resolution",Must be one of the defined ComplianceEventType values,"'risk_level_change'"
+ComplianceEvent,event_description,string,Yes,"Detailed description of the compliance event. Provides context and specifics about the event.",,"'Risk rating increased from low to medium due to increased transaction volume'"
+ComplianceEvent,old_state,string,No,"Previous state before the event. Used for tracking changes and audit purposes.",,"'low'"
+ComplianceEvent,new_state,string,Yes,"New state after the event. Documents the result of the compliance event.",,"'medium'"
+ComplianceEvent,decision,string,No,"Decision made regarding the event. Documents compliance determinations.",,"'Additional monitoring required'"
+ComplianceEvent,decision_date,string,No,"Date when decision was made. Used for tracking response times.",YYYY-MM-DD format,"2024-01-16"
+ComplianceEvent,decision_maker,string,No,"Person or role who made the decision. Important for accountability.",,"'Compliance Officer'"
+ComplianceEvent,next_review_date,string,No,"Scheduled date for next review. Used for follow-up planning.",YYYY-MM-DD format,"2024-07-15"
+ComplianceEvent,related_account_id,string,Yes,"Reference to related account if applicable. Links events to specific accounts.",Foreign Key to Account.account_id,"ACC-001"
+ComplianceEvent,notes,string,No,"Additional information about the event. Used for providing context and special instructions.",,"'Escalated to senior compliance team'"
+
+RiskAssessment,assessment_id,string,Yes,"Unique identifier for each risk assessment. Used for tracking the evolution of risk ratings over time.",Primary Key,"RA-2024-001"
+RiskAssessment,entity_id,string,Yes,"Reference to the entity being assessed. Links risk assessments to specific institutions or subsidiaries.",Foreign Key to Entity.entity_id,"ENT-001"
+RiskAssessment,entity_type,string,Yes,"Type of entity being assessed. Helps in applying appropriate risk assessment criteria for institutions vs subsidiaries.",Must be either 'institution' or 'subsidiary',"'institution'"
+RiskAssessment,assessment_date,string,Yes,"Date when the risk assessment was conducted. Used for compliance tracking and scheduling future assessments.",YYYY-MM-DD format,"2024-01-15"
+RiskAssessment,risk_rating,enum,Yes,"Overall risk rating assigned. Determines monitoring intensity and compliance requirements. Levels:
+- low: Standard monitoring required
+- medium: Enhanced monitoring needed
+- high: Intensive monitoring and controls required",Must be one of: low, medium, high,"'medium'"
+RiskAssessment,risk_score,string,Yes,"Numerical or categorical score representing the detailed risk calculation. May use different scoring systems based on entity type.",Format depends on scoring methodology,"'75/100' or 'B2'"
+RiskAssessment,assessment_type,string,Yes,"Type of risk assessment performed. Indicates scope and methodology of assessment.","Must be one of: initial, periodic, event-triggered, comprehensive","'periodic'"
+RiskAssessment,risk_factors,json,Yes,"Detailed breakdown of individual risk factors and their scores. Each factor must be scored 1-5, where:
+1: Very Low Risk
+2: Low Risk
+3: Medium Risk
+4: High Risk
+5: Very High Risk
+
+Common factors include:
+- geographic_risk: Location-based risk
+- product_risk: Risk from products/services
+- client_risk: Customer base risk
+- channel_risk: Delivery channel risk
+- regulatory_risk: Regulatory compliance risk",JSON object with risk factor scores,"{'geographic_risk': 2, 'product_risk': 3, 'client_risk': 4, 'channel_risk': 2, 'regulatory_risk': 3}"
+RiskAssessment,conducted_by,string,No,"Name or ID of person who conducted the assessment. Important for accountability and quality control.",,"'John Smith, Senior Risk Analyst'"
+RiskAssessment,approved_by,string,No,"Name or ID of person who approved the assessment. Required for higher risk ratings.",,"'Jane Doe, Risk Committee Chair'"
+RiskAssessment,findings,string,No,"Detailed observations and findings from the assessment. Documents specific risk factors and concerns identified.",,"'High transaction volumes in high-risk jurisdictions noted. Enhanced monitoring recommended.'"
+RiskAssessment,assessor,string,No,"Department or team responsible for the assessment. Used for organizational tracking.",,"'Global Risk Assessment Team'"
+RiskAssessment,next_review_date,string,No,"Scheduled date for next assessment. Based on risk rating and regulatory requirements.",YYYY-MM-DD format,"2024-07-15"
+RiskAssessment,notes,string,No,"Additional context or special considerations. Used for documenting unusual circumstances or specific concerns.",,"'Assessment accelerated due to recent regulatory changes'"
+
+Subsidiary,subsidiary_id,string,Yes,"Unique identifier for the subsidiary. Used for tracking and relating to parent institution.",Primary Key,"SUB-2024-001"
+Subsidiary,parent_institution_id,string,Yes,"Reference to the parent institution. Establishes ownership hierarchy.",Foreign Key to Institution.institution_id,"INS-001"
+Subsidiary,legal_name,string,Yes,"Official registered name of the subsidiary. Must match incorporation documents.",Must match legal registration,"'GS International Banking LLC'"
+Subsidiary,tax_id,string,Yes,"Tax identification number in jurisdiction of registration. Format varies by country.",Country-specific format,"'12-3456789'"
+Subsidiary,incorporation_country,string,Yes,"Country where subsidiary is legally registered. Important for jurisdictional compliance.",ISO country code recommended,"'SGP'"
+Subsidiary,incorporation_date,string,Yes,"Date of legal incorporation. Must be before acquisition date.",YYYY-MM-DD format,"2010-03-15"
+Subsidiary,acquisition_date,string,Yes,"Date when subsidiary was acquired by parent institution. Must be after incorporation date.",YYYY-MM-DD format,"2015-06-30"
+Subsidiary,business_type,string,Yes,"Primary business activity of subsidiary. May differ from parent institution.","Must be one of: banking, trading, asset_management, insurance, other","'trading'"
+Subsidiary,operational_status,string,Yes,"Current operational state of the subsidiary.","Must be one of: active, dormant, liquidating, dissolved","'active'"
+Subsidiary,parent_ownership_percentage,float,Yes,"Percentage owned by parent institution. Determines consolidation requirements.",Between 0 and 100,"75.5"
+Subsidiary,consolidation_status,string,Yes,"How subsidiary is treated in consolidated reporting.","Must be one of: full, partial, none","'full'"
+Subsidiary,capital_investment,float,Yes,"Amount of capital invested by parent institution. Used for financial reporting.",Positive number,"10000000.00"
+Subsidiary,functional_currency,string,Yes,"Primary operating currency of subsidiary. May differ from parent currency.",ISO currency code,"'SGD'"
+Subsidiary,material_subsidiary,boolean,Yes,"Whether subsidiary is material to parent institution's operations. Affects reporting requirements.",Boolean,"true"
+Subsidiary,risk_classification,string,Yes,"Risk level assigned to subsidiary. May differ from parent's risk rating.","Must be one of: low, medium, high","'medium'"
+Subsidiary,regulatory_status,string,Yes,"Current standing with local regulators. Important for compliance monitoring.","Must be one of: compliant, under_review, remediation","'compliant'"
+Subsidiary,local_licenses,array[string],Yes,"List of licenses required and held in operating jurisdiction. Critical for operational compliance.",Array of license identifiers,"['SG-BANK-001', 'SG-TRADE-002']"
+Subsidiary,integration_status,string,Yes,"Level of operational integration with parent institution.","Must be one of: full, partial, standalone","'partial'"
+Subsidiary,revenue,float,Yes,"Annual revenue in functional currency. Used for financial reporting and materiality assessment.",Positive number,"25000000.00"
+Subsidiary,assets,float,Yes,"Total assets under management or control. Important for regulatory thresholds.",Positive number,"100000000.00"
+Subsidiary,liabilities,float,Yes,"Total liabilities. Used for financial health assessment.",Positive number,"75000000.00"
+Subsidiary,financial_metrics,json,Yes,"Key financial ratios and metrics. Used for performance monitoring and risk assessment.",JSON object of financial metrics,"{'capital_ratio': 0.15, 'liquidity_ratio': 1.2, 'leverage_ratio': 0.7}"
+Subsidiary,reporting_frequency,string,Yes,"How often subsidiary must report to parent institution.","Must be one of: monthly, quarterly, semi-annual, annual","'monthly'"
+Subsidiary,requires_local_audit,boolean,Yes,"Whether separate local audits are required by jurisdiction.",Boolean,"true"
+Subsidiary,corporate_governance_model,string,Yes,"Governance structure implemented at subsidiary level.","Must be one of: board, committee, direct_report","'board'"
+Subsidiary,is_regulated,boolean,Yes,"Whether subsidiary is subject to local regulatory oversight.",Boolean,"true"
+Subsidiary,is_customer,boolean,Yes,"Whether subsidiary is also a customer of parent institution.",Boolean,"false"
+Subsidiary,customer_id,string,No,"Customer identifier if subsidiary is also a customer. Links to customer records.",Only if is_customer is true,"'CUST-001'"
+Subsidiary,customer_onboarding_date,string,No,"Date when subsidiary was onboarded as a customer.",YYYY-MM-DD format if is_customer is true,"2015-07-01"
+Subsidiary,customer_risk_rating,string,No,"Risk rating as a customer, may differ from entity risk rating.","Must be one of: low, medium, high if is_customer is true","'low'"
+Subsidiary,customer_status,string,No,"Current status as a customer.","Must be one of: active, suspended, closed if is_customer is true","'active'"
+Subsidiary,created_at,datetime,Yes,"Timestamp when subsidiary record was created. Used for audit trail.",System-generated timestamp,"2024-01-01T00:00:00Z"
+Subsidiary,updated_at,datetime,Yes,"Timestamp of last record update. Used for change tracking.",System-generated timestamp,"2024-01-15T10:30:00Z"
+Subsidiary,deleted_at,datetime,No,"Timestamp if subsidiary is soft deleted. Null for active records.",Null for active records,"2024-12-31T23:59:59Z"
