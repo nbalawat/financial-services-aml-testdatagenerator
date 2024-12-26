@@ -276,6 +276,16 @@ class Neo4jHandler(DatabaseHandler):
             'from_label': 'Transaction',
             'to_label': 'Account',
             'properties': ['amount', 'currency']
+        },
+        'IS_INSTITUTION': {
+            'from_label': 'Entity',
+            'to_label': 'Institution',
+            'properties': ['created_at', 'updated_at']
+        },
+        'IS_SUBSIDIARY': {
+            'from_label': 'Entity',
+            'to_label': 'Subsidiary',
+            'properties': ['created_at', 'updated_at']
         }
     }
 
@@ -546,6 +556,38 @@ class Neo4jHandler(DatabaseHandler):
                             })
                             
                         elif node_type == 'Subsidiary':
+                            # Add timestamps if not present
+                            if 'created_at' not in prepared_record:
+                                prepared_record['created_at'] = pd.Timestamp.now().isoformat()
+                            if 'updated_at' not in prepared_record:
+                                prepared_record['updated_at'] = pd.Timestamp.now().isoformat()
+
+                            try:
+                                # Create Entity node and IS_SUBSIDIARY relationship
+                                await session.run("""
+                                    MERGE (s:Subsidiary {subsidiary_id: $subsidiary_id})
+                                    MERGE (e:Entity {entity_id: $subsidiary_id})
+                                    ON CREATE SET e.entity_type = 'subsidiary',
+                                        e.created_at = $created_at,
+                                        e.updated_at = $updated_at,
+                                        e.parent_entity_id = $parent_institution_id
+                                    ON MATCH SET e.updated_at = $updated_at,
+                                        e.parent_entity_id = $parent_institution_id
+                                    MERGE (e)-[:IS_SUBSIDIARY {
+                                        created_at: $created_at,
+                                        updated_at: $updated_at
+                                    }]->(s)
+                                """, {
+                                    'subsidiary_id': prepared_record['subsidiary_id'],
+                                    'parent_institution_id': prepared_record['parent_institution_id'],
+                                    'created_at': prepared_record['created_at'],
+                                    'updated_at': prepared_record['updated_at']
+                                })
+                            except Exception as e:
+                                print(f"Failed to create Subsidiary Entity relationship: {str(e)}")
+                                print(f"Prepared record: {prepared_record}")
+                                raise e
+
                             # Create OWNS_SUBSIDIARY relationship with Institution
                             await session.run("""
                                 MATCH (i:Institution {institution_id: $parent_institution_id})
@@ -603,6 +645,35 @@ class Neo4jHandler(DatabaseHandler):
                                 })
 
                         elif node_type == 'Institution':
+                            # Add timestamps if not present
+                            if 'created_at' not in prepared_record:
+                                prepared_record['created_at'] = pd.Timestamp.now().isoformat()
+                            if 'updated_at' not in prepared_record:
+                                prepared_record['updated_at'] = pd.Timestamp.now().isoformat()
+
+                            try:
+                                # Create Entity node and IS_INSTITUTION relationship
+                                await session.run("""
+                                    MERGE (i:Institution {institution_id: $institution_id})
+                                    MERGE (e:Entity {entity_id: $institution_id})
+                                    ON CREATE SET e.entity_type = 'institution',
+                                        e.created_at = $created_at,
+                                        e.updated_at = $updated_at
+                                    ON MATCH SET e.updated_at = $updated_at
+                                    MERGE (e)-[:IS_INSTITUTION {
+                                        created_at: $created_at,
+                                        updated_at: $updated_at
+                                    }]->(i)
+                                """, {
+                                    'institution_id': prepared_record['institution_id'],
+                                    'created_at': prepared_record['created_at'],
+                                    'updated_at': prepared_record['updated_at']
+                                })
+                            except Exception as e:
+                                print(f"Failed to create Institution Entity relationship: {str(e)}")
+                                print(f"Prepared record: {prepared_record}")
+                                raise e
+
                             # Create INCORPORATED_IN relationship with Country
                             await session.run("""
                                 MATCH (i:Institution {institution_id: $institution_id})
