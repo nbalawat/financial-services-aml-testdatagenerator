@@ -13,7 +13,13 @@ A comprehensive system for generating and managing test data for Anti-Money Laun
   - Documents and jurisdiction presence
 - Dual database support:
   - PostgreSQL for relational data storage
-  - Neo4j for graph-based relationship analysis
+  - Neo4j for graph-based relationship analysis and traversal
+- Rich relationship modeling:
+  - Transaction flows (SENT, RECEIVED, TRANSACTED)
+  - Entity ownership (OWNED_BY, HAS_SUBSIDIARY)
+  - Document associations (HAS_DOCUMENT, ISSUED_ON)
+  - Risk and compliance (HAS_RISK_ASSESSMENT, HAS_COMPLIANCE_EVENT)
+  - Personnel relationships (HAS_AUTHORIZED_PERSON, CITIZEN_OF)
 - Data consistency validation across databases
 - Configurable data generation parameters
 - Comprehensive test suite with pytest
@@ -244,6 +250,55 @@ The system includes the following main data models:
    - Amount and currency
    - Temporal relationships
 
+## Database Schema
+
+### PostgreSQL Tables
+- `institutions`: Financial institutions and their core details
+- `subsidiaries`: Subsidiary entities and their relationships
+- `accounts`: Account information and balances
+- `transactions`: Financial transactions with debit/credit account tracking
+- `beneficial_owners`: Beneficial ownership information
+- `documents`: Identity and verification documents
+- `risk_assessments`: Risk assessment records
+- `compliance_events`: Compliance-related events and actions
+- `authorized_persons`: Authorized signatories and key personnel
+
+### Neo4j Graph Model
+The Neo4j graph model represents entities as nodes and their relationships as edges:
+
+#### Node Types
+- Institution
+- Subsidiary
+- Account
+- Transaction
+- BeneficialOwner
+- Document
+- RiskAssessment
+- ComplianceEvent
+- AuthorizedPerson
+- Country
+- BusinessDate
+
+#### Key Relationships
+- Transaction Flow:
+  - `SENT`: Account to Transaction (with amount and currency)
+  - `RECEIVED`: Transaction to Account (with amount and currency)
+  - `TRANSACTED`: Account to Transaction (with transaction date)
+  - `TRANSACTED_ON`: Transaction to BusinessDate
+- Entity Structure:
+  - `OWNS_SUBSIDIARY`: Institution to Subsidiary
+  - `IS_CUSTOMER`: Subsidiary to Institution
+  - `OWNED_BY`: Institution/Subsidiary to BeneficialOwner
+- Document Management:
+  - `HAS_DOCUMENT`: Institution/Subsidiary to Document
+  - `ISSUED_ON`: Document to BusinessDate
+- Risk and Compliance:
+  - `HAS_RISK_ASSESSMENT`: Institution/Subsidiary to RiskAssessment
+  - `HAS_COMPLIANCE_EVENT`: Institution/Subsidiary to ComplianceEvent
+- Personnel:
+  - `HAS_AUTHORIZED_PERSON`: Institution/Subsidiary to AuthorizedPerson
+  - `CITIZEN_OF`: BeneficialOwner/AuthorizedPerson to Country
+
 ## Recent Improvements
 
 ### Neo4j Data Handling
@@ -326,21 +381,6 @@ The test suite includes:
 - Integration tests for database operations
 - Data integrity tests across databases
 - Relationship validation tests
-
-## Database Schema
-
-### PostgreSQL Tables
-- institutions
-- subsidiaries
-- beneficial_owners
-- accounts
-- transactions
-- addresses
-
-### Neo4j Nodes and Relationships
-- Nodes: Institution, Subsidiary, BeneficialOwner, Account, Transaction
-- Relationships: OWNS_SUBSIDIARY, HAS_BENEFICIAL_OWNER, HAS_ACCOUNT, TRANSACTED
-- Temporal nodes: BusinessDate for tracking incorporation and transaction dates
 
 ## Contributing
 
