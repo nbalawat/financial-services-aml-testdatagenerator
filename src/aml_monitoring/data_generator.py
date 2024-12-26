@@ -121,7 +121,7 @@ class DataGenerator:
     async def generate_all(self):
         """Generate all data types and persist them."""
         num_institutions = self.config['num_institutions']
-        batch_size = self.config.get('batch_size', 1000)
+        institutions_batch_size = self.config.get('batch_size', {}).get('institutions', 100)
         
         # Initialize batch data
         institution_subsidiary_batch = defaultdict(list)
@@ -169,7 +169,7 @@ class DataGenerator:
                 await inst_progress.update(1)
                 
                 # Process batch if size threshold reached
-                if current_batch_size >= batch_size:
+                if current_batch_size >= institutions_batch_size:
                     # First persist the entities
                     entities_batch = {'entities': institution_subsidiary_batch['entities']}
                     await self.persist_batch(entities_batch)

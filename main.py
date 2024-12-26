@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 from aml_monitoring.data_generator import DataGenerator
+from aml_monitoring.database import PostgresHandler, Neo4jHandler
 
 # Configure logging
 logging.basicConfig(
@@ -65,14 +66,31 @@ async def async_main():
 
     generator = None
     try:
+        # Configure database handlers
+        postgres_config = {
+            'host': os.getenv('POSTGRES_HOST', 'localhost'),
+            'port': int(os.getenv('POSTGRES_PORT', '5432')),
+            'database': os.getenv('POSTGRES_DB', 'aml_monitoring'),
+            'user': os.getenv('POSTGRES_USER', 'aml_user'),
+            'password': os.getenv('POSTGRES_PASSWORD', 'aml_password')
+        }
+        
+        # Get Neo4j connection details
+        neo4j_uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
+        neo4j_user = os.getenv('NEO4J_USER', 'neo4j')
+        neo4j_password = os.getenv('NEO4J_PASSWORD', 'password')
+
+        postgres_handler = PostgresHandler(postgres_config)
+        neo4j_handler = Neo4jHandler(neo4j_uri, neo4j_user, neo4j_password)
+
         if args.cleanup_only:
             logger.info("Cleanup mode: initializing databases...")
-            generator = DataGenerator()
-            await generator.initialize_db()
+            await postgres_handler.initialize()
+            await neo4j_handler.initialize()
             
             logger.info("Cleaning existing data...")
-            await generator.postgres_handler.wipe_clean()
-            await generator.neo4j_handler.wipe_clean()
+            await postgres_handler.wipe_clean()
+            await neo4j_handler.wipe_clean()
             
             logger.info("Cleanup completed successfully!")
             return
@@ -98,16 +116,16 @@ async def async_main():
         for key, value in config.items():
             logger.info(f"  {key}: {value}")
 
-        # Initialize the generator
-        generator = DataGenerator(config)
+        # Initialize the generator with database handlers
+        generator = DataGenerator(config, postgres_handler, neo4j_handler)
         
         logger.info("Initializing databases...")
         await generator.initialize_db()
 
         # Clean existing data
         logger.info("Cleaning existing data...")
-        await generator.postgres_handler.wipe_clean()
-        await generator.neo4j_handler.wipe_clean()
+        await postgres_handler.wipe_clean()
+        await neo4j_handler.wipe_clean()
 
         logger.info("Generating test data...")
         await generator.generate_all()
