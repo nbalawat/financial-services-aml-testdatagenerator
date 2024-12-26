@@ -145,7 +145,7 @@ class DatabaseHandler(ABC):
         """Async context manager exit."""
         await self.close()
 
-    @abstractmethod
-    async def wipe_clean(self) -> None:
-        """Wipe all data from the database while preserving the schema."""
-        pass
+    async def wipe_clean(self):
+        """Clean all data from the graph database."""
+        async with self.driver.session() as session:
+            await session.run("MATCH (n) DETACH DELETE n")

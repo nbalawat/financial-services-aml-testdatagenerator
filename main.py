@@ -8,12 +8,15 @@ from dotenv import load_dotenv
 from aml_monitoring.data_generator import DataGenerator
 from aml_monitoring.database import PostgresHandler, Neo4jHandler
 
-# Configure logging
+# Configure simple logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Disable other loggers
+logging.getLogger('aml_monitoring').setLevel(logging.WARNING)
 
 def parse_args():
     # Set up argument parser
@@ -63,6 +66,7 @@ async def async_main():
     # Set logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger('aml_monitoring').setLevel(logging.DEBUG)
 
     generator = None
     try:
@@ -84,15 +88,12 @@ async def async_main():
         neo4j_handler = Neo4jHandler(neo4j_uri, neo4j_user, neo4j_password)
 
         if args.cleanup_only:
-            logger.info("Cleanup mode: initializing databases...")
+            logger.info("Cleaning databases...")
             await postgres_handler.initialize()
             await neo4j_handler.initialize()
-            
-            logger.info("Cleaning existing data...")
             await postgres_handler.wipe_clean()
             await neo4j_handler.wipe_clean()
-            
-            logger.info("Cleanup completed successfully!")
+            logger.info("Cleanup completed")
             return
 
         # Configure the data generator
@@ -112,14 +113,13 @@ async def async_main():
             }
         }
 
-        logger.info("Initializing data generator with configuration:")
-        for key, value in config.items():
-            logger.info(f"  {key}: {value}")
+        logger.info("Starting data generation with:")
+        logger.info(f"- {args.num_institutions} institutions")
+        logger.info(f"- Max {args.max_accounts} accounts per institution")
+        logger.info(f"- {args.min_transactions}-{args.max_transactions} transactions per account")
 
         # Initialize the generator with database handlers
         generator = DataGenerator(config, postgres_handler, neo4j_handler)
-        
-        logger.info("Initializing databases...")
         await generator.initialize_db()
 
         # Clean existing data
@@ -127,12 +127,12 @@ async def async_main():
         await postgres_handler.wipe_clean()
         await neo4j_handler.wipe_clean()
 
-        logger.info("Generating test data...")
+        logger.info("Generating data...")
         await generator.generate_all()
 
-        logger.info("Data generation completed successfully!")
+        logger.info("Data generation completed")
     except Exception as e:
-        logger.error(f"Error during data generation: {str(e)}")
+        logger.error(f"Error: {str(e)}")
         raise
     finally:
         if generator:
