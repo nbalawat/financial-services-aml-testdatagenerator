@@ -230,6 +230,12 @@ class DataGenerator:
 
         # Process each institution
         for institution in institution_subsidiary_batch['institutions']:
+            # Generate address for institution
+            logger.warning(f"Generating address for institution {institution.institution_id}")
+            address = await self.address_gen.generate(institution.institution_id, 'institution').__anext__()
+            await self.persist_batch({'addresses': [address]})
+            logger.warning("Saved institution address")
+
             # Generate beneficial owners for institution
             num_owners = random.randint(1, self.config.get('max_beneficial_owners_per_institution', 3))
             logger.warning(f"Generating {num_owners} beneficial owners for institution {institution.institution_id}")
@@ -287,6 +293,110 @@ class DataGenerator:
             if risk_assessments:
                 await self.persist_batch({'risk_assessments': risk_assessments})
                 logger.warning(f"Saved {len(risk_assessments)} risk assessments")
+
+            # Generate authorized persons
+            num_auth_persons = random.randint(1, self.config.get('max_authorized_persons_per_institution', 3))
+            logger.warning(f"Generating {num_auth_persons} authorized persons for institution {institution.institution_id}")
+            auth_persons = []
+            for _ in range(num_auth_persons):
+                auth_person = await self.authorized_person_gen.generate(institution.institution_id, 'institution').__anext__()
+                auth_persons.append(auth_person)
+            
+            if auth_persons:
+                await self.persist_batch({'authorized_persons': auth_persons})
+                logger.warning(f"Saved {len(auth_persons)} authorized persons")
+
+            # Generate compliance events
+            num_events = random.randint(1, self.config.get('max_compliance_events_per_institution', 3))
+            logger.warning(f"Generating {num_events} compliance events for institution {institution.institution_id}")
+            events = []
+            for _ in range(num_events):
+                event = await self.compliance_event_gen.generate(institution.institution_id, 'institution').__anext__()
+                events.append(event)
+            
+            if events:
+                await self.persist_batch({'compliance_events': events})
+                logger.warning(f"Saved {len(events)} compliance events")
+
+            # Generate documents
+            num_documents = random.randint(1, self.config.get('max_documents_per_institution', 5))
+            logger.warning(f"Generating {num_documents} documents for institution {institution.institution_id}")
+            documents = []
+            for _ in range(num_documents):
+                document = await self.document_gen.generate(institution.institution_id, 'institution').__anext__()
+                documents.append(document)
+            
+            if documents:
+                await self.persist_batch({'documents': documents})
+                logger.warning(f"Saved {len(documents)} documents")
+
+            # Generate jurisdiction presences
+            num_jurisdictions = random.randint(1, self.config.get('max_jurisdictions_per_institution', 3))
+            logger.warning(f"Generating {num_jurisdictions} jurisdiction presences for institution {institution.institution_id}")
+            jurisdictions = []
+            for _ in range(num_jurisdictions):
+                jurisdiction = await self.jurisdiction_presence_gen.generate(institution.institution_id, 'institution').__anext__()
+                jurisdictions.append(jurisdiction)
+            
+            if jurisdictions:
+                await self.persist_batch({'jurisdiction_presences': jurisdictions})
+                logger.warning(f"Saved {len(jurisdictions)} jurisdiction presences")
+
+        # Process each subsidiary
+        for subsidiary in institution_subsidiary_batch['subsidiaries']:
+            # Generate address for subsidiary
+            logger.warning(f"Generating address for subsidiary {subsidiary.subsidiary_id}")
+            address = await self.address_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
+            await self.persist_batch({'addresses': [address]})
+            logger.warning("Saved subsidiary address")
+
+            # Generate authorized persons for subsidiary
+            num_auth_persons = random.randint(1, self.config.get('max_authorized_persons_per_subsidiary', 2))
+            logger.warning(f"Generating {num_auth_persons} authorized persons for subsidiary {subsidiary.subsidiary_id}")
+            auth_persons = []
+            for _ in range(num_auth_persons):
+                auth_person = await self.authorized_person_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
+                auth_persons.append(auth_person)
+            
+            if auth_persons:
+                await self.persist_batch({'authorized_persons': auth_persons})
+                logger.warning(f"Saved {len(auth_persons)} authorized persons")
+
+            # Generate compliance events for subsidiary
+            num_events = random.randint(1, self.config.get('max_compliance_events_per_subsidiary', 2))
+            logger.warning(f"Generating {num_events} compliance events for subsidiary {subsidiary.subsidiary_id}")
+            events = []
+            for _ in range(num_events):
+                event = await self.compliance_event_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
+                events.append(event)
+            
+            if events:
+                await self.persist_batch({'compliance_events': events})
+                logger.warning(f"Saved {len(events)} compliance events")
+
+            # Generate documents for subsidiary
+            num_documents = random.randint(1, self.config.get('max_documents_per_subsidiary', 3))
+            logger.warning(f"Generating {num_documents} documents for subsidiary {subsidiary.subsidiary_id}")
+            documents = []
+            for _ in range(num_documents):
+                document = await self.document_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
+                documents.append(document)
+            
+            if documents:
+                await self.persist_batch({'documents': documents})
+                logger.warning(f"Saved {len(documents)} documents")
+
+            # Generate jurisdiction presences for subsidiary
+            num_jurisdictions = random.randint(1, self.config.get('max_jurisdictions_per_subsidiary', 2))
+            logger.warning(f"Generating {num_jurisdictions} jurisdiction presences for subsidiary {subsidiary.subsidiary_id}")
+            jurisdictions = []
+            for _ in range(num_jurisdictions):
+                jurisdiction = await self.jurisdiction_presence_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
+                jurisdictions.append(jurisdiction)
+            
+            if jurisdictions:
+                await self.persist_batch({'jurisdiction_presences': jurisdictions})
+                logger.warning(f"Saved {len(jurisdictions)} jurisdiction presences")
             
         logger.warning("Completed generating related data")
 
