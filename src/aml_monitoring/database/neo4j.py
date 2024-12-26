@@ -158,13 +158,6 @@ class Neo4jHandler(DatabaseHandler):
             ],
             'optional': []
         },
-        'Date': {
-            'primary_key': ['date'],
-            'required': [
-                'date'
-            ],
-            'optional': []
-        },
         'BusinessDate': {
             'primary_key': ['date'],
             'required': [
@@ -251,7 +244,7 @@ class Neo4jHandler(DatabaseHandler):
         },
         'OPENED_ON': {
             'from_label': 'Account',
-            'to_label': 'Date',
+            'to_label': 'BusinessDate',
             'properties': []
         },
         'BELONGS_TO': {
@@ -531,10 +524,10 @@ class Neo4jHandler(DatabaseHandler):
                                 'entity_id': prepared_record['entity_id'],
                                 'account_id': prepared_record['account_id']
                             })
-                            # Create OPENED_ON relationship with Date
+                            # Create OPENED_ON relationship with BusinessDate
                             await session.run("""
                                 MATCH (a:Account {account_id: $account_id})
-                                MERGE (d:Date {date: $opening_date})
+                                MERGE (d:BusinessDate {date: $opening_date})
                                 MERGE (a)-[:OPENED_ON]->(d)
                             """, {
                                 'account_id': prepared_record['account_id'],
