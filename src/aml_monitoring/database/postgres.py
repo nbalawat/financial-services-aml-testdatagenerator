@@ -9,6 +9,7 @@ from datetime import datetime
 import numpy as np
 import logging
 from asyncpg import create_pool
+from uuid import UUID
 
 from .base import DatabaseHandler, DatabaseError
 from .exceptions import ConnectionError, ValidationError, SchemaError, BatchError, DatabaseInitializationError
@@ -22,15 +23,23 @@ class PostgresHandler(DatabaseHandler):
     
     # Table schemas with their required columns and types
     TABLE_SCHEMAS = {
+        'entities': {
+            'entity_id': 'uuid PRIMARY KEY',
+            'entity_type': 'text',  # 'institution' or 'subsidiary'
+            'parent_entity_id': 'uuid',  # NULL for institutions, parent_institution_id for subsidiaries
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
+        },
         'institutions': {
             'institution_id': 'uuid PRIMARY KEY',
-            'legal_name': 'text',
-            'business_type': 'text',
-            'incorporation_country': 'text',
-            'incorporation_date': 'date',
-            'onboarding_date': 'date',
-            'risk_rating': 'text',
-            'operational_status': 'text',
+            'legal_name': 'text NOT NULL',
+            'business_type': 'text NOT NULL',
+            'incorporation_country': 'text NOT NULL',
+            'incorporation_date': 'date NOT NULL',
+            'onboarding_date': 'date NOT NULL',
+            'risk_rating': 'text NOT NULL',
+            'operational_status': 'text NOT NULL',
             'primary_currency': 'text',
             'regulatory_status': 'text',
             'primary_business_activity': 'text',
@@ -81,17 +90,23 @@ class PostgresHandler(DatabaseHandler):
             'regulatory_status': 'text',
             'local_licenses': 'text[]',
             'integration_status': 'text',
-            'financial_metrics': 'jsonb',
+            'revenue': 'numeric',
+            'assets': 'numeric',
+            'liabilities': 'numeric',
             'reporting_frequency': 'text',
             'requires_local_audit': 'boolean',
             'corporate_governance_model': 'text',
             'is_regulated': 'boolean',
             'is_customer': 'boolean',
             'industry_codes': 'text[]',
+            'financial_metrics': 'jsonb',
             'customer_id': 'uuid',
             'customer_onboarding_date': 'date',
             'customer_risk_rating': 'text',
-            'customer_status': 'text'
+            'customer_status': 'text',
+            'created_at': 'timestamp',
+            'updated_at': 'timestamp',
+            'deleted_at': 'timestamp'
         },
         'addresses': {
             'address_id': 'uuid PRIMARY KEY',
@@ -110,7 +125,8 @@ class PostgresHandler(DatabaseHandler):
             'primary_address': 'boolean',
             'validation_status': 'text',
             'last_verified': 'date',
-            'geo_coordinates': 'jsonb',
+            'latitude': 'numeric',
+            'longitude': 'numeric',
             'timezone': 'text',
             'created_at': 'timestamp',
             'updated_at': 'timestamp',
@@ -148,6 +164,8 @@ class PostgresHandler(DatabaseHandler):
             'account_id': 'uuid',
             'entity_id': 'uuid',
             'entity_type': 'text',
+            'debit_account_id': 'uuid',
+            'credit_account_id': 'uuid',
             'counterparty_account': 'text',
             'counterparty_name': 'text',
             'counterparty_bank': 'text',
@@ -213,7 +231,8 @@ class PostgresHandler(DatabaseHandler):
             'authorization_end': 'date',
             'contact_info': 'jsonb',
             'is_active': 'boolean',
-            'last_verification_date': 'date'
+            'last_verification_date': 'date',
+            'nationality': 'text'
         },
         'documents': {
             'document_id': 'uuid PRIMARY KEY',
@@ -270,35 +289,43 @@ class PostgresHandler(DatabaseHandler):
     
     # Foreign key constraints to be added after table creation
     FOREIGN_KEY_CONSTRAINTS = {
-        'addresses': [
-            ('entity_id', 'institutions', 'institution_id')
+        'entities': [
+            ('parent_entity_id', 'entities', 'entity_id')
         ],
-        'risk_assessments': [
-            ('entity_id', 'institutions', 'institution_id')
-        ],
-        'authorized_persons': [
-            ('entity_id', 'institutions', 'institution_id')
-        ],
-        'documents': [
-            ('entity_id', 'institutions', 'institution_id')
-        ],
-        'jurisdiction_presences': [
-            ('entity_id', 'institutions', 'institution_id')
-        ],
-        'accounts': [
-            ('entity_id', 'institutions', 'institution_id')
-        ],
-        'beneficial_owners': [
-            ('entity_id', 'institutions', 'institution_id')
-        ],
-        'transactions': [
-            ('account_id', 'accounts', 'account_id')
-        ],
-        'compliance_events': [
-            ('entity_id', 'institutions', 'institution_id')
+        'institutions': [
+            ('institution_id', 'entities', 'entity_id')
         ],
         'subsidiaries': [
+            ('subsidiary_id', 'entities', 'entity_id'),
             ('parent_institution_id', 'institutions', 'institution_id')
+        ],
+        'addresses': [
+            ('entity_id', 'entities', 'entity_id')
+        ],
+        'risk_assessments': [
+            ('entity_id', 'entities', 'entity_id')
+        ],
+        'authorized_persons': [
+            ('entity_id', 'entities', 'entity_id')
+        ],
+        'documents': [
+            ('entity_id', 'entities', 'entity_id')
+        ],
+        'jurisdiction_presences': [
+            ('entity_id', 'entities', 'entity_id')
+        ],
+        'accounts': [
+            ('entity_id', 'entities', 'entity_id')
+        ],
+        'beneficial_owners': [
+            ('entity_id', 'entities', 'entity_id')
+        ],
+        'transactions': [
+            ('account_id', 'accounts', 'account_id'),
+            ('entity_id', 'entities', 'entity_id')
+        ],
+        'compliance_events': [
+            ('entity_id', 'entities', 'entity_id')
         ]
     }
     
@@ -349,12 +376,12 @@ class PostgresHandler(DatabaseHandler):
             self._log_operation('connect', {'status': 'failed', 'error': str(e)})
             raise ConnectionError(f"Failed to connect to PostgreSQL: {str(e)}")
     
-    async def disconnect(self) -> None:
+    async def close(self) -> None:
         """Close database connection."""
         if self.pool:
             await self.pool.close()
             self.is_connected = False
-            self._log_operation('disconnect', {'status': 'success'})
+            self._log_operation('close', {'status': 'success'})
     
     async def validate_schema(self) -> bool:
         """Validate database schema against models."""
@@ -407,7 +434,8 @@ class PostgresHandler(DatabaseHandler):
 
                 # Create tables in order (base tables first, then dependent tables)
                 table_order = [
-                    'institutions',  # Base table
+                    'entities',  # Base table
+                    'institutions',
                     'subsidiaries',
                     'addresses',
                     'risk_assessments',
@@ -436,10 +464,11 @@ class PostgresHandler(DatabaseHandler):
 
                 # Add foreign key constraints
                 for table_name, constraints in self.FOREIGN_KEY_CONSTRAINTS.items():
-                    for column, ref_table, ref_column in constraints:
+                    for i, (column, ref_table, ref_column) in enumerate(constraints):
+                        constraint_name = f"fk_{table_name}_{column}_{ref_table}"
                         await conn.execute(f"""
                             ALTER TABLE {table_name}
-                            ADD CONSTRAINT fk_{table_name}_{column}
+                            ADD CONSTRAINT {constraint_name}
                             FOREIGN KEY ({column})
                             REFERENCES {ref_table}({ref_column})
                             ON DELETE CASCADE
@@ -511,6 +540,16 @@ class PostgresHandler(DatabaseHandler):
             self._log_operation('initialize_database',
                               {'status': 'failed', 'error': str(e)})
             raise DatabaseInitializationError(f"Failed to initialize database: {str(e)}")
+    
+    async def initialize(self) -> None:
+        """Initialize database connection and create tables if they don't exist."""
+        try:
+            await self.connect()
+            await self.initialize_database()
+            self._log_operation('initialize', {'status': 'success'})
+        except Exception as e:
+            self._log_operation('initialize', {'status': 'failed', 'error': str(e)})
+            raise DatabaseInitializationError(f"Failed to initialize PostgreSQL database: {str(e)}")
     
     async def _validate_dataframe_schema(self, table_name: str, df: pd.DataFrame) -> None:
         """Validate DataFrame schema for a specific table."""
@@ -690,6 +729,7 @@ class PostgresHandler(DatabaseHandler):
             async with self.pool.acquire() as conn:
                 # Process each table in the correct order (respecting foreign keys)
                 table_order = [
+                    'entities',
                     'institutions',
                     'subsidiaries',
                     'addresses',
@@ -850,35 +890,100 @@ class PostgresHandler(DatabaseHandler):
                     prepared_data[key] = value
         return prepared_data
 
-    async def insert_data(self, table_name: str, data: Dict[str, Any]) -> None:
-        """Insert a single row of data into a table."""
+    async def insert_data(self, table_name: str, df: pd.DataFrame) -> None:
+        """Insert data into a table."""
         try:
-            if table_name not in self.TABLE_SCHEMAS:
-                raise ValidationError(f"Invalid table name: {table_name}")
-            
-            # Prepare data with enum conversions
-            prepared_data = await self._prepare_data(table_name, data)
-            
-            # Create the INSERT query
-            columns = list(prepared_data.keys())
-            values = [prepared_data[col] for col in columns]
-            placeholders = [f"${i+1}" for i in range(len(columns))]
-            
-            query = f"""
-                INSERT INTO {table_name} ({', '.join(columns)})
-                VALUES ({', '.join(placeholders)})
-            """
-            
             async with self.pool.acquire() as conn:
-                await conn.execute(query, *values)
-            
-            self._log_operation('insert_data', 
-                              {'table': table_name, 'data': prepared_data})
-            
+                # Convert DataFrame to list of tuples
+                columns = df.columns.tolist()
+                values = [tuple(x) for x in df.to_records(index=False)]
+                
+                # Convert UUID strings to UUID objects and handle boolean values
+                uuid_columns = ['institution_id', 'account_id', 'owner_id', 'transaction_id', 
+                              'subsidiary_id', 'assessment_id', 'person_id', 'document_id', 
+                              'presence_id', 'event_id', 'address_id', 'entity_id']
+                
+                # Get boolean columns from schema
+                bool_columns = [col for col, type_ in self.TABLE_SCHEMAS[table_name].items() 
+                              if type_.startswith('boolean')]
+                
+                # Get date columns from schema
+                date_columns = [col for col, type_ in self.TABLE_SCHEMAS[table_name].items() 
+                              if type_.startswith('date') or type_.startswith('timestamp')]
+                
+                # Get JSON columns from schema
+                json_columns = [col for col, type_ in self.TABLE_SCHEMAS[table_name].items() 
+                              if type_.startswith('json')]
+                
+                # Get numeric columns from schema
+                numeric_columns = [col for col, type_ in self.TABLE_SCHEMAS[table_name].items() 
+                                 if type_.startswith(('integer', 'numeric', 'decimal'))]
+                
+                for i, value in enumerate(values):
+                    value_list = list(value)
+                    for j, col in enumerate(columns):
+                        # Handle UUIDs
+                        if col in uuid_columns and isinstance(value_list[j], str):
+                            value_list[j] = UUID(value_list[j])
+                        # Handle booleans
+                        elif col in bool_columns:
+                            value_list[j] = bool(value_list[j])
+                        # Handle dates
+                        elif col in date_columns:
+                            if isinstance(value_list[j], str):
+                                value_list[j] = pd.to_datetime(value_list[j]).to_pydatetime()
+                            elif isinstance(value_list[j], pd.Timestamp) or isinstance(value_list[j], np.datetime64):
+                                value_list[j] = pd.to_datetime(value_list[j]).to_pydatetime()
+                        # Handle JSON fields (convert dicts to JSON strings)
+                        elif col in json_columns and isinstance(value_list[j], dict):
+                            value_list[j] = json.dumps(value_list[j])
+                        # Handle NaN in numeric columns
+                        elif col in numeric_columns and pd.isna(value_list[j]):
+                            value_list[j] = None
+                    values[i] = tuple(value_list)
+
+                # Create placeholders for the VALUES clause
+                placeholders = ','.join(f'${i+1}' for i in range(len(columns)))
+                
+                # Construct and execute the INSERT query
+                query = f"""
+                    INSERT INTO {table_name} ({','.join(columns)})
+                    VALUES ({placeholders})
+                """
+                
+                # Execute the query for each row
+                for value in values:
+                    await conn.execute(query, *value)
+                
+                self._log_operation('insert_data', {'table': table_name})
         except Exception as e:
-            self._log_operation('insert_data', 
-                              {'status': 'failed', 'error': str(e)})
+            self._log_operation('insert_data', {'status': 'failed', 'error': str(e)})
             raise DatabaseError(f"Failed to insert data: {str(e)}")
+
+    async def save_batch(self, df_data: Dict[str, pd.DataFrame]) -> None:
+        """Save a batch of data to the database."""
+        try:
+            # Save data in the correct order to respect foreign key constraints
+            save_order = [
+                'entities',
+                'institutions',
+                'subsidiaries',
+                'addresses',
+                'beneficial_owners',
+                'accounts',
+                'transactions',
+                'risk_assessments',
+                'compliance_events',
+                'authorized_persons',
+                'documents',
+                'jurisdiction_presences'
+            ]
+            
+            for table in save_order:
+                if table in df_data and not df_data[table].empty:
+                    await self.insert_data(table, df_data[table])
+        except Exception as e:
+            raise DatabaseError(f"Failed to save batch: {str(e)}")
 
     async def execute(self, query: str) -> None:
         """Execute a query without returning results."""

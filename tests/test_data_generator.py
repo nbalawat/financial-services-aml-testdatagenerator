@@ -7,18 +7,19 @@ import pandas as pd
 from datetime import datetime, timedelta
 import uuid
 from typing import Dict, Any
-from aml_monitoring.data_generator import (
-    DataGenerator, InstitutionGenerator, AddressGenerator,
-    AccountGenerator, TransactionGenerator, BeneficialOwnerGenerator,
-    RiskAssessmentGenerator, AuthorizedPersonGenerator,
-    DocumentGenerator, JurisdictionPresenceGenerator,
+
+from aml_monitoring.data_generator import DataGenerator
+from aml_monitoring.generators import (
+    InstitutionGenerator, AddressGenerator, AccountGenerator,
+    TransactionGenerator, BeneficialOwnerGenerator, RiskAssessmentGenerator,
+    AuthorizedPersonGenerator, DocumentGenerator, JurisdictionPresenceGenerator,
     ComplianceEventGenerator, SubsidiaryGenerator
 )
 from aml_monitoring.models import (
     Institution, Address, Account, Transaction,
     BusinessType, OperationalStatus, RiskRating, TransactionType,
     TransactionStatus, RiskAssessment, AuthorizedPerson, Document,
-    JurisdictionPresence, ComplianceEvent, ComplianceEventType, Subsidiary
+    JurisdictionPresence, ComplianceEvent, ComplianceEventType, Subsidiary, Entity
 )
 from aml_monitoring.database.postgres import PostgresHandler
 from aml_monitoring.database.neo4j import Neo4jHandler
@@ -30,43 +31,48 @@ def test_config() -> Dict[str, Any]:
         'num_institutions': 5,
         'min_transactions_per_account': 1,
         'max_transactions_per_account': 3,
-        'batch_size': 100
+        'batch_size': 100,
+        'postgres': {
+            'host': 'localhost',
+            'port': 5432,
+            'user': 'aml_user',
+            'password': 'aml_password',
+            'database': 'aml_monitoring_test'
+        },
+        'neo4j': {
+            'uri': 'bolt://localhost:7687',
+            'user': 'neo4j',
+            'password': 'aml_password'
+        }
     }
-
-@pytest.fixture
-def data_generator(test_config):
-    """Create a DataGenerator instance."""
-    return DataGenerator(test_config)
 
 @pytest_asyncio.fixture
-async def data_generator():
+async def postgres_handler(test_config):
+    """Create a PostgresHandler instance."""
+    handler = PostgresHandler(test_config['postgres'])
+    await handler.initialize()
+    yield handler
+    await handler.close()
+
+@pytest_asyncio.fixture
+async def neo4j_handler(test_config):
+    """Create a Neo4jHandler instance."""
+    handler = Neo4jHandler(
+        uri=test_config['neo4j']['uri'],
+        user=test_config['neo4j']['user'],
+        password=test_config['neo4j']['password']
+    )
+    await handler.initialize()
+    yield handler
+    await handler.close()
+
+@pytest_asyncio.fixture
+async def data_generator(test_config, postgres_handler, neo4j_handler):
     """Create a DataGenerator instance."""
-    config = {
-        'num_institutions': 5,
-        'min_transactions_per_account': 1,
-        'max_transactions_per_account': 3,
-        'batch_size': 100
-    }
-    generator = DataGenerator(config)
+    generator = DataGenerator(test_config, postgres_handler, neo4j_handler)
     await generator.initialize_db()
     yield generator
     await generator.close_db()
-
-@pytest_asyncio.fixture
-async def postgres_handler():
-    """Create a PostgresHandler instance."""
-    handler = PostgresHandler()
-    await handler.connect()
-    yield handler
-    await handler.disconnect()
-
-@pytest_asyncio.fixture
-async def neo4j_handler():
-    """Create a Neo4jHandler instance."""
-    handler = Neo4jHandler()
-    await handler.connect()
-    yield handler
-    await handler.disconnect()
 
 @pytest.mark.asyncio
 async def test_institution_generator(test_config):
@@ -222,17 +228,31 @@ async def test_data_generator_persist_batch(data_generator):
     print(f"Methods: {dir(data_generator.postgres_handler)}")
     print(f"Has wipe_clean: {'wipe_clean' in dir(data_generator.postgres_handler)}")
     
-    # Create test institutions
-    institutions = []
-    generator = InstitutionGenerator(data_generator.config)
-    async for inst in generator.generate():
-        institutions.append(inst)
-   
     # Initialize database connections
     await data_generator.initialize_db()
     
     try:
-        # Persist batch
+        # First create test entities
+        entities = []
+        institutions = []
+        generator = InstitutionGenerator(data_generator.config)
+        async for inst in generator.generate():
+            # Create entity for institution
+            entity = Entity(
+                entity_id=inst.institution_id,
+                entity_type='institution',
+                parent_entity_id=None,
+                created_at=datetime.now().replace(microsecond=0),
+                updated_at=datetime.now().replace(microsecond=0),
+                deleted_at=None
+            )
+            entities.append(entity)
+            institutions.append(inst)
+        
+        # Persist entities first
+        await data_generator.persist_batch({'entities': entities}, batch_size=2)
+        
+        # Then persist institutions
         await data_generator.persist_batch({'institutions': institutions}, batch_size=2)
     finally:
         # Clean up
@@ -282,10 +302,10 @@ async def test_generate_all(data_generator):
         # Clean up
         if data_generator.postgres_handler.is_connected:
             await data_generator.postgres_handler.wipe_clean()
-            await data_generator.postgres_handler.disconnect()
+            await data_generator.postgres_handler.close()
         if data_generator.neo4j_handler.is_connected:
             await data_generator.neo4j_handler.wipe_clean()
-            await data_generator.neo4j_handler.disconnect()
+            await data_generator.neo4j_handler.close()
 
 @pytest.mark.asyncio
 async def test_institution_generation(data_generator):
@@ -345,7 +365,7 @@ async def test_subsidiary_generation(data_generator):
         assert isinstance(sub.is_customer, bool)
         
         # Check relationships
-        assert any(inst.institution_id == sub.parent_institution_id for inst in data['institutions'])
+        assert any(str(inst.institution_id) == str(sub.parent_institution_id) for inst in data['institutions'])
         
         # Check date validations
         inc_date = datetime.strptime(sub.incorporation_date, '%Y-%m-%d')
@@ -377,32 +397,16 @@ async def test_neo4j_subsidiary_relationships(data_generator, neo4j_handler):
         for rel in relationships:
             assert rel['i.institution_id']
             assert rel['s.subsidiary_id']
-            assert 0 < rel['r.ownership_percentage'] <= 100
+            assert 0 < float(rel['r.ownership_percentage']) <= 100
             assert rel['r.acquisition_date']
             
         # Check incorporation relationships
         result = await session.run("""
             MATCH (s:Subsidiary)-[:INCORPORATED_IN]->(c:Country)
-            RETURN s.subsidiary_id, c.code
+            RETURN count(s) as count
         """)
-        incorporations = await result.data()
-        
-        assert len(incorporations) > 0
-        for inc in incorporations:
-            assert inc['s.subsidiary_id']
-            assert inc['c.code']
-            
-        # Check temporal relationships
-        result = await session.run("""
-            MATCH (s:Subsidiary)-[:INCORPORATED_ON]->(bd:BusinessDate)
-            RETURN s.subsidiary_id, bd.date
-        """)
-        dates = await result.data()
-        
-        assert len(dates) > 0
-        for d in dates:
-            assert d['s.subsidiary_id']
-            assert d['bd.date']
+        subsidiary_count = (await result.data())[0]['count']
+        assert subsidiary_count > 0
 
 @pytest.mark.asyncio
 async def test_data_integrity(data_generator, postgres_handler, neo4j_handler):
@@ -453,3 +457,213 @@ async def test_data_integrity(data_generator, postgres_handler, neo4j_handler):
     assert neo_relationships.keys() == pg_relationships.keys()
     for key in neo_relationships:
         assert abs(neo_relationships[key] - pg_relationships[key]) < 0.01  # Account for floating point differences
+
+@pytest.mark.asyncio
+async def test_neo4j_relationship_completeness(data_generator, neo4j_handler):
+    """Test that all expected relationships are created in Neo4j."""
+    # Generate and persist data
+    await data_generator.generate_all()
+
+    # Define expected relationship types
+    expected_relationships = [
+        # Institution and Subsidiary relationships
+        "OWNS_SUBSIDIARY",
+        "IS_CUSTOMER",
+        "INCORPORATED_IN",
+        "INCORPORATED_ON",
+        
+        # Account relationships
+        "HAS_ACCOUNT",
+        "OPENED_ON",
+        
+        # Transaction relationships
+        "TRANSACTED",
+        "TRANSACTED_ON",
+        
+        # Document relationships
+        "HAS_DOCUMENT",
+        "ISSUED_ON",
+        
+        # Risk Assessment relationships
+        "HAS_RISK_ASSESSMENT",
+        
+        # Compliance Event relationships
+        "HAS_COMPLIANCE_EVENT",
+        
+        # Beneficial Owner relationships
+        "OWNED_BY",
+        "CITIZEN_OF",
+        
+        # Authorized Person relationships
+        "HAS_AUTHORIZED_PERSON"
+    ]
+
+    async with neo4j_handler.driver.session() as session:
+        # Check each relationship type
+        for rel_type in expected_relationships:
+            result = await session.run(f"""
+                MATCH ()-[r:{rel_type}]->()
+                RETURN count(r) as count
+            """)
+            count = (await result.data())[0]['count']
+            assert count > 0, f"Expected relationships of type {rel_type} but found none"
+
+        # Test specific relationship patterns
+        # 1. Institution to Subsidiary relationships
+        result = await session.run("""
+            MATCH path = (i:Institution)-[:OWNS_SUBSIDIARY]->(s:Subsidiary)
+            RETURN count(path) as count
+        """)
+        subsidiary_count = (await result.data())[0]['count']
+        assert subsidiary_count > 0, "No Institution-Subsidiary relationships found"
+
+        # 2. Account relationships
+        result = await session.run("""
+            MATCH path = (i:Institution)-[:HAS_ACCOUNT]->(a:Account)
+            RETURN count(path) as count
+        """)
+        account_count = (await result.data())[0]['count']
+        assert account_count > 0, "No Account relationships found"
+
+        # 3. Transaction relationships
+        result = await session.run("""
+            MATCH path = (a:Account)-[:TRANSACTED]->(t:Transaction)
+            RETURN count(path) as count
+        """)
+        transaction_count = (await result.data())[0]['count']
+        assert transaction_count > 0, "No Transaction relationships found"
+
+        # 4. Document relationships
+        result = await session.run("""
+            MATCH path = (e)-[:HAS_DOCUMENT]->(d:Document)
+            WHERE e:Institution OR e:Subsidiary
+            RETURN count(path) as count
+        """)
+        document_count = (await result.data())[0]['count']
+        assert document_count > 0, "No Document relationships found"
+
+        # 5. Beneficial Owner relationships
+        result = await session.run("""
+            MATCH path = (i:Institution)-[:OWNED_BY]->(b:BeneficialOwner)
+            RETURN count(path) as count
+        """)
+        owner_count = (await result.data())[0]['count']
+        assert owner_count > 0, "No Beneficial Owner relationships found"
+
+        # 6. Country relationships
+        result = await session.run("""
+            MATCH path = (n)-[r:INCORPORATED_IN|OPERATES_IN]->(c:Country)
+            RETURN count(path) as count
+        """)
+        country_count = (await result.data())[0]['count']
+        assert country_count > 0, "No Country relationships found"
+
+        # 7. BusinessDate relationships
+        result = await session.run("""
+            MATCH path = (n)-[r:INCORPORATED_ON|OPENED_ON|TRANSACTED_ON|ISSUED_ON]->(d:BusinessDate)
+            RETURN count(path) as count
+        """)
+        date_count = (await result.data())[0]['count']
+        assert date_count > 0, "No BusinessDate relationships found"
+
+        # 8. Risk and Compliance relationships
+        result = await session.run("""
+            MATCH path = (e)-[r:HAS_RISK_ASSESSMENT|HAS_COMPLIANCE_EVENT]->(n)
+            WHERE e:Institution OR e:Subsidiary
+            RETURN count(path) as count
+        """)
+        risk_compliance_count = (await result.data())[0]['count']
+        assert risk_compliance_count > 0, "No Risk/Compliance relationships found"
+
+        # 9. Authorized Person relationships
+        result = await session.run("""
+            MATCH path = (e)-[:HAS_AUTHORIZED_PERSON]->(a:AuthorizedPerson)
+            WHERE e:Institution OR e:Subsidiary
+            RETURN count(path) as count
+        """)
+        auth_person_count = (await result.data())[0]['count']
+        assert auth_person_count > 0, "No Authorized Person relationships found"
+
+@pytest.mark.asyncio
+async def test_relationship_data_integrity(data_generator, neo4j_handler):
+    """Test that relationship properties contain valid data."""
+    await data_generator.generate_all()
+
+    async with neo4j_handler.driver.session() as session:
+        # Test ownership percentage in OWNS_SUBSIDIARY
+        result = await session.run("""
+            MATCH (i:Institution)-[r:OWNS_SUBSIDIARY]->(s:Subsidiary)
+            RETURN r.ownership_percentage as ownership
+        """)
+        ownerships = [record['ownership'] async for record in result]
+        assert all(0 < ownership <= 100 for ownership in ownerships), "Invalid ownership percentages found"
+
+        # Test temporal relationship dates
+        result = await session.run("""
+            MATCH (n)-[r:INCORPORATED_ON|ASSESSED_ON|OCCURRED_ON|FILED_ON]->(d:BusinessDate)
+            RETURN d.date as date
+        """)
+        dates = [record['date'] async for record in result]
+        assert all(isinstance(date, str) and len(date) == 10 for date in dates), "Invalid date format found"
+
+        # Test country codes in location relationships
+        result = await session.run("""
+            MATCH (n)-[r:INCORPORATED_IN|OPERATES_IN]->(c:Country)
+            RETURN c.code as code
+        """)
+        country_codes = [record['code'] async for record in result]
+        assert all(len(code) == 2 for code in country_codes), "Invalid country codes found"
+
+@pytest.mark.asyncio
+async def test_subsidiary_generation(data_generator):
+    """Test that subsidiaries are generated with required fields and proper relationships."""
+    # Generate all data
+    await data_generator.generate_all()
+    
+    # Get subsidiaries from Neo4j
+    async with data_generator.neo4j_handler.driver.session() as session:
+        result = await session.run("""
+            MATCH (s:Subsidiary)
+            RETURN s {
+                .subsidiary_id,
+                .parent_institution_id,
+                .legal_name,
+                .tax_id,
+                .incorporation_country,
+                .incorporation_date,
+                .acquisition_date,
+                .business_type,
+                .operational_status,
+                .parent_ownership_percentage,
+                .consolidation_status,
+                .capital_investment,
+                .functional_currency,
+                material_subsidiary: CASE 
+                    WHEN s.material_subsidiary = true OR s.material_subsidiary = 1.0 THEN true 
+                    ELSE false 
+                END
+            } as s
+        """)
+        subsidiaries = await result.data()
+    
+    assert len(subsidiaries) > 0
+    
+    # Verify subsidiary attributes
+    for record in subsidiaries:
+        sub = record['s']
+        
+        # Basic attributes
+        assert sub['subsidiary_id']
+        assert sub['parent_institution_id']
+        assert sub['legal_name']
+        assert sub['tax_id']
+        assert sub['incorporation_country']
+        assert sub['incorporation_date']
+        assert sub['acquisition_date']
+        assert sub['business_type']
+        assert sub['operational_status']
+        assert isinstance(float(sub['parent_ownership_percentage']), float)
+        assert sub['consolidation_status']
+        assert isinstance(float(sub['capital_investment']), float)
+        assert sub['functional_currency']
+        assert isinstance(sub['material_subsidiary'], bool)

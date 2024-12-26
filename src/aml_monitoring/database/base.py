@@ -35,7 +35,7 @@ class DatabaseHandler(ABC):
         pass
     
     @abstractmethod
-    async def disconnect(self) -> None:
+    async def close(self) -> None:
         """Close database connection."""
         pass
     
@@ -131,6 +131,11 @@ class DatabaseHandler(ABC):
         """Check database health."""
         pass
 
+    @abstractmethod
+    async def initialize(self) -> None:
+        """Initialize database connection and create tables if they don't exist."""
+        pass
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.connect()
@@ -138,7 +143,7 @@ class DatabaseHandler(ABC):
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
-        await self.disconnect()
+        await self.close()
 
     @abstractmethod
     async def wipe_clean(self) -> None:

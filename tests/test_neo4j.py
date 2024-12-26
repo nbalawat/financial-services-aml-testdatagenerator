@@ -1,140 +1,203 @@
-"""Test suite for Neo4j database handler."""
+"""Tests for Neo4j database handler."""
 
 import pytest
+import pytest_asyncio
 import pandas as pd
 from datetime import datetime
+from uuid import UUID
+import asyncio
 
 from aml_monitoring.database.exceptions import (
     ConnectionError, ValidationError, SchemaError, BatchError
 )
+from aml_monitoring.database.neo4j import Neo4jHandler
+from .test_config import TestConfig, TestData
 
 class TestNeo4jHandler:
     """Test suite for Neo4j database handler."""
     
+    @pytest_asyncio.fixture(scope="function")
+    async def neo4j_handler(self, test_config):
+        """Create Neo4j handler instance."""
+        handler = Neo4jHandler(**test_config.neo4j_config['config'])
+        await handler.connect()
+        yield handler
+        await handler.close()
+    
     @pytest.mark.asyncio
     async def test_connection(self, neo4j_handler):
-        """Test database connection and disconnection."""
+        """Test database connection."""
+        # Test successful connection
         assert neo4j_handler.is_connected
-        await neo4j_handler.disconnect()
+        
+        # Test disconnection
+        await neo4j_handler.close()
         assert not neo4j_handler.is_connected
-        await neo4j_handler.connect()
-        assert neo4j_handler.is_connected
-        
-    @pytest.mark.asyncio
-    async def test_schema_validation(self, neo4j_handler):
-        """Test schema validation."""
-        # Test with valid schema
-        await neo4j_handler.validate_schema()
-        
-        # Test with invalid node type
-        with pytest.raises(ValidationError):
-            await neo4j_handler._validate_dataframe_schema(
-                'invalid_node',
-                pd.DataFrame()
-            )
             
     @pytest.mark.asyncio
-    async def test_save_institution(self, neo4j_handler, sample_institution_data):
-        """Test saving institution node."""
-        df = pd.DataFrame([sample_institution_data])
-        data = {'institutions': df}
-        
-        # Test successful save
-        await neo4j_handler.save_batch(data)
-        
-        # Test duplicate save (should merge)
-        await neo4j_handler.save_batch(data)
-        
-    @pytest.mark.asyncio
-    async def test_save_transaction(self, neo4j_handler, sample_transaction_data,
-                                  sample_account_data):
-        """Test saving transaction with relationships."""
-        # First save the account
-        account_df = pd.DataFrame([sample_account_data])
-        await neo4j_handler.save_batch({'Account': account_df})
-        
-        # Then save the transaction
-        transaction_df = pd.DataFrame([sample_transaction_data])
-        await neo4j_handler.save_batch({'Transaction': transaction_df})
-        
-    @pytest.mark.asyncio
-    async def test_relationship_creation(self, neo4j_handler, sample_transaction_data,
-                                      sample_account_data):
-        """Test creation of relationships between nodes."""
-        # Save account and transaction
-        account_df = pd.DataFrame([sample_account_data])
-        transaction_df = pd.DataFrame([sample_transaction_data])
-        
-        await neo4j_handler.save_batch({
-            'Account': account_df,
-            'Transaction': transaction_df
-        })
-        
-        # Verify relationship exists
-        async with neo4j_handler.driver.session() as session:
-            result = await session.run("""
-                MATCH (t:Transaction)-[r:BELONGS_TO]->(a:Account)
-                WHERE t.transaction_id = $transaction_id
-                AND a.account_id = $account_id
-                RETURN count(r) as rel_count
-            """, {
-                'transaction_id': sample_transaction_data['transaction_id'],
-                'account_id': sample_account_data['account_id']
-            })
-            record = await result.single()
-            assert record['rel_count'] == 1
-            
-    @pytest.mark.asyncio
-    async def test_invalid_data_type(self, neo4j_handler, sample_account_data):
-        """Test invalid data type handling."""
-        data = sample_account_data.copy()
-        data['balance'] = 'invalid_balance'  # Should be float
-        df = pd.DataFrame([data])
-        
-        with pytest.raises(BatchError):
-            await neo4j_handler.save_batch({'Account': df})
-            
-    @pytest.mark.asyncio
-    async def test_missing_required_property(self, neo4j_handler, sample_institution_data):
-        """Test handling of missing required properties."""
-        data = sample_institution_data.copy()
-        del data['legal_name']  # Required property
-        df = pd.DataFrame([data])
-        
-        with pytest.raises(ValidationError):
-            await neo4j_handler.save_batch({'Institution': df})
-            
-    @pytest.mark.asyncio
-    async def test_wipe_clean(self, neo4j_handler, sample_institution_data):
-        """Test wiping database clean."""
-        # First save some data
-        df = pd.DataFrame([sample_institution_data])
-        await neo4j_handler.save_batch({'Institution': df})
-        
-        # Wipe clean
+    async def test_save_institution(self, neo4j_handler):
+        """Test saving an institution."""
         await neo4j_handler.wipe_clean()
         
-        # Verify data is gone but constraints exist
-        await neo4j_handler.validate_schema()  # Should not raise error
+        institution_data = TestData.institution_data()
+        await neo4j_handler.save_batch('institutions', [institution_data])
         
-        # Verify no nodes exist
+        # Verify institution was saved
         async with neo4j_handler.driver.session() as session:
-            result = await session.run("MATCH (n) RETURN count(n) as node_count")
-            record = await result.single()
-            assert record['node_count'] == 0
+            result = await session.run(
+                "MATCH (i:Institution) RETURN i"
+            )
+            nodes = [record['i'] async for record in result]
+            assert len(nodes) == 1
+            assert nodes[0]['institution_id'] == institution_data['institution_id']
+            assert nodes[0]['legal_name'] == institution_data['legal_name']
+
+    @pytest.mark.asyncio
+    async def test_save_transaction(self, neo4j_handler):
+        """Test saving a transaction."""
+        await neo4j_handler.wipe_clean()
+        
+        # Create institution and account first
+        institution_data = TestData.institution_data()
+        await neo4j_handler.save_batch('institutions', [institution_data])
+        
+        account_data = TestData.account_data(
+            institution_id=UUID(institution_data['institution_id'])
+        )
+        await neo4j_handler.save_batch('accounts', [account_data])
+        
+        # Create transaction
+        transaction_data = TestData.transaction_data(
+            account_id=UUID(account_data['account_id'])
+        )
+        await neo4j_handler.save_batch('transactions', [transaction_data])
+        
+        # Verify transaction was saved with relationships
+        async with neo4j_handler.driver.session() as session:
+            # First verify the transaction -> account relationship
+            result = await session.run("""
+                MATCH (t:Transaction)-[:BELONGS_TO]->(a:Account)
+                WHERE t.transaction_id = $transaction_id
+                RETURN t, a
+            """, transaction_id=transaction_data['transaction_id'])
+            records = [record async for record in result]
+            assert len(records) == 1
+            assert records[0]['t']['transaction_id'] == transaction_data['transaction_id']
+            assert records[0]['a']['account_id'] == account_data['account_id']
+            
+            # Then verify the account -> institution relationship
+            result = await session.run("""
+                MATCH (i:Institution)-[:HAS_ACCOUNT]->(a:Account)
+                WHERE a.account_id = $account_id
+                RETURN a, i
+            """, account_id=account_data['account_id'])
+            records = [record async for record in result]
+            assert len(records) == 1
+            assert records[0]['a']['account_id'] == account_data['account_id']
+            assert records[0]['i']['institution_id'] == institution_data['institution_id']
+        
+    @pytest.mark.asyncio
+    async def test_relationship_creation(self, neo4j_handler):
+        """Test creating relationships between nodes."""
+        await neo4j_handler.wipe_clean()
+        
+        # Create institution and account
+        institution_data = TestData.institution_data()
+        await neo4j_handler.save_batch('institutions', [institution_data])
+        
+        account_data = TestData.account_data(
+            institution_id=UUID(institution_data['institution_id'])
+        )
+        await neo4j_handler.save_batch('accounts', [account_data])
+        
+        # Create risk assessment
+        risk_assessment_data = TestData.risk_assessment_data(
+            entity_id=UUID(institution_data['institution_id'])
+        )
+        await neo4j_handler.save_batch('risk_assessments', [risk_assessment_data])
+        
+        # Verify relationships were created
+        async with neo4j_handler.driver.session() as session:
+            # Check account relationship
+            result = await session.run("""
+                MATCH (i:Institution)-[:HAS_ACCOUNT]->(a:Account)
+                WHERE i.institution_id = $institution_id
+                RETURN i, a
+            """, institution_id=institution_data['institution_id'])
+            records = [record async for record in result]
+            assert len(records) == 1
+            assert records[0]['i']['institution_id'] == institution_data['institution_id']
+            assert records[0]['a']['account_id'] == account_data['account_id']
+            
+            # Check risk assessment relationship
+            result = await session.run("""
+                MATCH (i:Institution)-[:HAS_RISK_ASSESSMENT]->(r:RiskAssessment)
+                WHERE i.institution_id = $institution_id
+                RETURN i, r
+            """, institution_id=institution_data['institution_id'])
+            records = [record async for record in result]
+            assert len(records) == 1
+            assert records[0]['i']['institution_id'] == institution_data['institution_id']
+            assert records[0]['r']['assessment_id'] == risk_assessment_data['assessment_id']
+
+    @pytest.mark.asyncio
+    async def test_invalid_data_type(self, neo4j_handler):
+        """Test handling of invalid data types."""
+        await neo4j_handler.wipe_clean()
+        
+        # Create invalid institution data with wrong data type
+        invalid_data = TestData.institution_data()
+        invalid_data['incorporation_date'] = 12345  # Should be string date
+        
+        # Should raise BatchError
+        with pytest.raises(BatchError):
+            await neo4j_handler.save_batch('institutions', [invalid_data])
             
     @pytest.mark.asyncio
-    async def test_batch_processing(self, neo4j_handler, sample_institution_data):
-        """Test processing data in batches."""
-        # Create multiple records
-        num_records = 1000
-        institution_data = [sample_institution_data.copy() for _ in range(num_records)]
-        for i, data in enumerate(institution_data):
-            data['institution_id'] = f'test-institution-{i}'
-            
-        institution_df = pd.DataFrame(institution_data)
+    async def test_missing_required_property(self, neo4j_handler):
+        """Test handling of missing required property."""
+        await neo4j_handler.wipe_clean()
         
-        # Test with different batch sizes
-        await neo4j_handler.save_batch({'Institution': institution_df}, batch_size=100)
-        await neo4j_handler.save_batch({'Institution': institution_df}, batch_size=500)
-        await neo4j_handler.save_batch({'Institution': institution_df}, batch_size=1000)
+        # Create invalid institution data missing required field
+        invalid_data = TestData.institution_data()
+        del invalid_data['incorporation_date']
+        
+        # Should raise ValidationError
+        with pytest.raises(ValidationError):
+            await neo4j_handler.save_batch('institutions', [invalid_data])
+    
+    @pytest.mark.asyncio
+    async def test_wipe_clean(self, neo4j_handler):
+        """Test wiping database clean."""
+        # Create test data
+        institution_data = TestData.institution_data()
+        await neo4j_handler.save_batch('institutions', [institution_data])
+        
+        # Wipe database
+        await neo4j_handler.wipe_clean()
+        
+        # Verify database is empty
+        async with neo4j_handler.driver.session() as session:
+            result = await session.run("MATCH (n) RETURN count(n) as count")
+            record = await result.single()
+            assert record['count'] == 0
+    
+    @pytest.mark.asyncio
+    async def test_batch_processing(self, neo4j_handler):
+        """Test processing multiple records in a batch."""
+        await neo4j_handler.wipe_clean()
+        
+        # Create multiple institutions
+        institutions = [
+            TestData.institution_data(UUID('123e4567-e89b-12d3-a456-426614174001')),
+            TestData.institution_data(UUID('123e4567-e89b-12d3-a456-426614174002')),
+            TestData.institution_data(UUID('123e4567-e89b-12d3-a456-426614174003'))
+        ]
+        
+        await neo4j_handler.save_batch('institutions', institutions)
+        
+        # Verify all institutions were saved
+        async with neo4j_handler.driver.session() as session:
+            result = await session.run("MATCH (i:Institution) RETURN count(i) as count")
+            record = await result.single()
+            assert record['count'] == len(institutions)

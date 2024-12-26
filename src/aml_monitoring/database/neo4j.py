@@ -5,10 +5,12 @@ from typing import Dict, List, Any, Optional, Set
 import pandas as pd
 from neo4j import AsyncGraphDatabase, AsyncDriver
 import json
-from datetime import datetime
+from datetime import datetime, date
+from uuid import UUID
+from enum import Enum
 
 from .base import DatabaseHandler
-from .exceptions import ConnectionError, ValidationError, SchemaError, BatchError, DatabaseError
+from .exceptions import ConnectionError, ValidationError, SchemaError, BatchError, DatabaseError, DatabaseInitializationError
 
 class Neo4jHandler(DatabaseHandler):
     """Handler for Neo4j database operations."""
@@ -90,7 +92,7 @@ class Neo4jHandler(DatabaseHandler):
             'required': [
                 'transaction_id', 'transaction_type', 'transaction_date',
                 'amount', 'currency', 'transaction_status', 'is_debit',
-                'account_id', 'entity_id', 'entity_type'
+                'account_id', 'entity_id', 'entity_type', 'debit_account_id', 'credit_account_id'
             ],
             'optional': [
                 'counterparty_account', 'counterparty_name', 'counterparty_bank',
@@ -103,15 +105,70 @@ class Neo4jHandler(DatabaseHandler):
         'Subsidiary': {
             'primary_key': ['subsidiary_id'],
             'required': [
-                'subsidiary_id', 'parent_institution_id', 'legal_name', 'tax_id',
-                'incorporation_country', 'incorporation_date', 'acquisition_date',
-                'business_type', 'operational_status', 'parent_ownership_percentage',
-                'consolidation_status', 'capital_investment', 'functional_currency',
-                'material_subsidiary', 'risk_classification', 'regulatory_status',
-                'local_licenses', 'integration_status', 'financial_metrics',
-                'reporting_frequency', 'requires_local_audit', 'corporate_governance_model',
-                'is_regulated', 'is_customer', 'industry_codes', 'customer_id',
+                'subsidiary_id', 'parent_institution_id', 'business_type',
+                'capital_investment', 'consolidation_status', 'acquisition_date',
+                'parent_ownership_percentage', 'created_at', 'updated_at',
+                'revenue', 'assets', 'liabilities'
+            ],
+            'optional': [
+                'deleted_at', 'is_customer', 'customer_id',
                 'customer_onboarding_date', 'customer_risk_rating', 'customer_status'
+            ]
+        },
+        'Entity': {
+            'primary_key': ['entity_id'],
+            'required': [
+                'entity_id', 'entity_type', 'created_at', 'updated_at'
+            ],
+            'optional': [
+                'parent_entity_id', 'deleted_at'
+            ]
+        },
+        'Address': {
+            'primary_key': ['address_id'],
+            'required': [
+                'address_id', 'address_line1', 'address_type',
+                'city', 'country', 'postal_code'
+            ],
+            'optional': [
+                'address_line2', 'state_province', 'region',
+                'effective_from', 'effective_to'
+            ]
+        },
+        'ComplianceEvent': {
+            'primary_key': ['event_id'],
+            'required': [
+                'event_id', 'entity_id', 'event_type', 'event_date',
+                'event_description', 'new_state'
+            ],
+            'optional': []
+        },
+        'AuthorizedPerson': {
+            'primary_key': ['person_id'],
+            'required': [
+                'person_id', 'entity_id', 'name', 'title',
+                'authorization_start', 'authorization_type'
+            ],
+            'optional': []
+        },
+        'Country': {
+            'primary_key': ['code'],
+            'required': [
+                'code'
+            ],
+            'optional': []
+        },
+        'Date': {
+            'primary_key': ['date'],
+            'required': [
+                'date'
+            ],
+            'optional': []
+        },
+        'BusinessDate': {
+            'primary_key': ['date'],
+            'required': [
+                'date'
             ],
             'optional': []
         }
@@ -134,10 +191,15 @@ class Neo4jHandler(DatabaseHandler):
             'to_label': 'BeneficialOwner',
             'properties': ['ownership_percentage', 'verification_date']
         },
-        'HAS_SUBSIDIARY': {
+        'OWNS_SUBSIDIARY': {
             'from_label': 'Institution',
             'to_label': 'Subsidiary',
-            'properties': ['ownership_percentage', 'relationship_start_date']
+            'properties': ['ownership_percentage', 'acquisition_date']
+        },
+        'IS_CUSTOMER': {
+            'from_label': 'Subsidiary',
+            'to_label': 'Institution',
+            'properties': ['customer_id', 'customer_onboarding_date', 'customer_risk_rating']
         },
         'HAS_DOCUMENT': {
             'from_label': ['Institution', 'Subsidiary'],
@@ -153,6 +215,11 @@ class Neo4jHandler(DatabaseHandler):
             'from_label': ['Institution', 'Subsidiary'],
             'to_label': 'Country',
             'properties': ['incorporation_date']
+        },
+        'INCORPORATED_ON': {
+            'from_label': ['Institution', 'Subsidiary'],
+            'to_label': 'BusinessDate',
+            'properties': []
         },
         'CITIZEN_OF': {
             'from_label': ['BeneficialOwner', 'AuthorizedPerson'],
@@ -170,7 +237,7 @@ class Neo4jHandler(DatabaseHandler):
             'properties': ['address_type', 'effective_from']
         },
         'TRANSACTED_ON': {
-            'from_label': 'Account',
+            'from_label': 'Transaction',
             'to_label': 'BusinessDate',
             'properties': [
                 'total_amount', 'transaction_count',
@@ -184,7 +251,7 @@ class Neo4jHandler(DatabaseHandler):
         },
         'OPENED_ON': {
             'from_label': 'Account',
-            'to_label': 'BusinessDate',
+            'to_label': 'Date',
             'properties': []
         },
         'BELONGS_TO': {
@@ -197,16 +264,6 @@ class Neo4jHandler(DatabaseHandler):
             'to_label': 'RiskAssessment',
             'properties': []
         },
-        'HAS_AUTHORIZED_PERSON': {
-            'from_label': ['Institution', 'Subsidiary'],
-            'to_label': 'AuthorizedPerson',
-            'properties': ['title', 'authorization_date']
-        },
-        'HAS_DOCUMENT': {
-            'from_label': ['Institution', 'Subsidiary'],
-            'to_label': 'Document',
-            'properties': ['document_type']
-        },
         'HAS_COMPLIANCE_EVENT': {
             'from_label': ['Institution', 'Subsidiary'],
             'to_label': 'ComplianceEvent',
@@ -217,47 +274,57 @@ class Neo4jHandler(DatabaseHandler):
             'to_label': 'Account',
             'properties': []
         },
-        'OWNS_SUBSIDIARY': {
-            'from_label': 'Institution',
-            'to_label': 'Subsidiary',
-            'properties': ['ownership_percentage', 'acquisition_date']
+        'SENT': {
+            'from_label': 'Account',
+            'to_label': 'Transaction',
+            'properties': ['amount', 'currency']
+        },
+        'RECEIVED': {
+            'from_label': 'Transaction',
+            'to_label': 'Account',
+            'properties': ['amount', 'currency']
         }
     }
 
-    def __init__(self):
-        """Initialize Neo4j handler."""
+    def __init__(self, uri: str, user: str, password: str):
+        """Initialize Neo4j handler.
+        
+        Args:
+            uri: Neo4j connection URI
+            user: Neo4j username
+            password: Neo4j password
+        """
         super().__init__()
-        self.driver: Optional[AsyncDriver] = None
+        self.uri = uri
+        self.user = user
+        self.password = password
+        self.driver = None
+        self.is_connected = False
     
     async def connect(self) -> None:
-        """Establish database connection."""
+        """Connect to Neo4j database."""
         try:
-            host = os.getenv('NEO4J_HOST', 'localhost')
-            port = os.getenv('NEO4J_PORT', '7687')
-            user = os.getenv('NEO4J_USER', 'neo4j')
-            password = os.getenv('NEO4J_PASSWORD', '')
-            
-            uri = f'bolt://{host}:{port}'
-            self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
-            
-            # Test connection
-            async with self.driver.session() as session:
-                result = await session.run("RETURN 1")
-                await result.consume()
-            
+            self.driver = AsyncGraphDatabase.driver(
+                self.uri,
+                auth=(self.user, self.password)
+            )
+            await self.driver.verify_connectivity()
             self.is_connected = True
             self._log_operation('connect', {'status': 'success'})
-            
         except Exception as e:
             self._log_operation('connect', {'status': 'failed', 'error': str(e)})
             raise ConnectionError(f"Failed to connect to Neo4j: {str(e)}")
     
-    async def disconnect(self) -> None:
+    async def close(self) -> None:
         """Close database connection."""
-        if self.driver:
-            await self.driver.close()
-            self.is_connected = False
-            self._log_operation('disconnect', {'status': 'success'})
+        try:
+            if self.is_connected and self.driver:
+                await self.driver.close()
+                self.is_connected = False
+                self._log_operation('close', {'status': 'success'})
+        except Exception as e:
+            self._log_operation('close', {'status': 'failed', 'error': str(e)})
+            raise DatabaseError(f"Failed to close connection: {str(e)}")
     
     async def validate_schema(self) -> bool:
         """Validate database schema (constraints and indexes)."""
@@ -337,580 +404,426 @@ class Neo4jHandler(DatabaseHandler):
                               {'status': 'failed', 'error': str(e)})
             raise SchemaError(f"Failed to create schema: {str(e)}")
     
-    async def _validate_dataframe_schema(self, node_type: str, df: pd.DataFrame) -> None:
-        """Validate DataFrame schema for a specific node type."""
-        if node_type not in self.NODE_SCHEMAS:
-            raise ValidationError(f"Invalid node type: {node_type}")
+    def _get_node_type(self, table_name: str) -> str:
+        """Convert table name to node type."""
+        # Map table names to node types
+        table_to_node = {
+            'institutions': 'Institution',
+            'accounts': 'Account',
+            'transactions': 'Transaction',
+            'risk_assessments': 'RiskAssessment',
+            'beneficial_owners': 'BeneficialOwner',
+            'documents': 'Document',
+            'jurisdiction_presences': 'JurisdictionPresence',
+            'subsidiaries': 'Subsidiary',
+            'entities': 'Entity',
+            'addresses': 'Address',
+            'compliance_events': 'ComplianceEvent',
+            'authorized_persons': 'AuthorizedPerson'
+        }
+        return table_to_node.get(table_name, table_name)
 
-        required_fields = set(self.NODE_SCHEMAS[node_type]['required'])
-        df_fields = set(df.columns)
-
-        missing_fields = required_fields - df_fields
-        if missing_fields:
-            raise ValidationError(f"Missing required fields in {node_type}: {missing_fields}")
-
-    async def save_batch(self, data: Dict[str, pd.DataFrame], batch_size: int = 1000) -> None:
-        """Save a batch of data to Neo4j."""
-        if not self.is_connected:
-            raise ConnectionError("Not connected to database")
-
-        # Normalize table names to lowercase
-        normalized_data = {}
-        for table_name, df in data.items():
-            normalized_name = table_name.lower()
-            if normalized_name.endswith('s'):
-                normalized_data[normalized_name] = df
-            else:
-                normalized_data[f"{normalized_name}s"] = df
-
-        # Validate data first - let validation errors propagate up
-        await self.validate_data(normalized_data)
-
+    async def save_batch(self, table_name: str, records: List[Dict[str, Any]]) -> None:
+        """Save a batch of records to Neo4j."""
         try:
+            # Convert table name to node type
+            node_type = self._get_node_type(table_name)
+            
+            # Validate records
+            for record in records:
+                self._validate_record(node_type, record)
+            
             async with self.driver.session() as session:
-                # Save institutions first (they are the root nodes)
-                if 'institutions' in normalized_data and not normalized_data['institutions'].empty:
-                    for i in range(0, len(normalized_data['institutions']), batch_size):
-                        batch = normalized_data['institutions'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
+                failed_items = []
+                for record in records:
+                    try:
+                        # Convert data types
+                        prepared_record = self._prepare_properties(record)
+                        
+                        # Get primary key field
+                        primary_key = self.NODE_SCHEMAS[node_type]['primary_key'][0]
+                        
+                        # Create node
+                        await session.run(f"""
+                            MERGE (n:{node_type} {{{primary_key}: $record.{primary_key}}})
+                            SET n = $record
+                        """, record=prepared_record)
+                        
+                        # Create relationships based on node type
+                        if node_type == 'Transaction':
+                            # Create relationships with accounts
                             await session.run("""
-                                MERGE (i:Institution {institution_id: $id})
-                                ON CREATE SET
-                                    i.legal_name = $name,
-                                    i.business_type = $business_type,
-                                    i.incorporation_country = $country,
-                                    i.incorporation_date = $inc_date,
-                                    i.operational_status = $status,
-                                    i.regulatory_status = $reg_status,
-                                    i.licenses = $licenses,
-                                    i.industry_codes = $industry_codes,
-                                    i.public_company = $public,
-                                    i.stock_symbol = $symbol,
-                                    i.stock_exchange = $exchange
-                                ON MATCH SET
-                                    i.legal_name = $name,
-                                    i.business_type = $business_type,
-                                    i.incorporation_country = $country,
-                                    i.incorporation_date = $inc_date,
-                                    i.operational_status = $status,
-                                    i.regulatory_status = $reg_status,
-                                    i.licenses = $licenses,
-                                    i.industry_codes = $industry_codes,
-                                    i.public_company = $public,
-                                    i.stock_symbol = $symbol,
-                                    i.stock_exchange = $exchange
-                                WITH i
-                                MERGE (c:Country {code: $country})
-                                MERGE (i)-[:INCORPORATED_IN {date: $inc_date}]->(c)
-                                WITH i, $inc_date as inc_date
-                                WHERE inc_date IS NOT NULL
-                                MERGE (bd:BusinessDate {date: inc_date})
-                                MERGE (i)-[:INCORPORATED_ON]->(bd)
-                            """, {
-                                'id': str(row['institution_id']),
-                                'name': row['legal_name'],
-                                'business_type': row['business_type'],
-                                'country': row['incorporation_country'],
-                                'inc_date': row['incorporation_date'],
-                                'status': row['operational_status'],
-                                'reg_status': row['regulatory_status'],
-                                'licenses': json.dumps(row['licenses']),
-                                'industry_codes': json.dumps(row['industry_codes']),
-                                'public': row['public_company'],
-                                'symbol': row.get('stock_symbol'),
-                                'exchange': row.get('stock_exchange')
-                            })
-                
-                # Save subsidiaries
-                if 'subsidiaries' in normalized_data and not normalized_data['subsidiaries'].empty:
-                    for i in range(0, len(normalized_data['subsidiaries']), batch_size):
-                        batch = normalized_data['subsidiaries'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
-                            await session.run("""
-                                MATCH (p:Institution {institution_id: $parent_id})
-                                MERGE (s:Subsidiary {subsidiary_id: $id})
-                                ON CREATE SET
-                                    s.legal_name = $name,
-                                    s.tax_id = $tax_id,
-                                    s.incorporation_country = $country,
-                                    s.incorporation_date = $inc_date,
-                                    s.acquisition_date = $acq_date,
-                                    s.business_type = $type,
-                                    s.operational_status = $status,
-                                    s.parent_ownership_percentage = $ownership,
-                                    s.consolidation_status = $consolidation,
-                                    s.capital_investment = $capital,
-                                    s.functional_currency = $currency,
-                                    s.material_subsidiary = $material,
-                                    s.risk_classification = $risk,
-                                    s.regulatory_status = $reg_status,
-                                    s.local_licenses = $licenses,
-                                    s.integration_status = $integration,
-                                    s.financial_metrics = $metrics,
-                                    s.reporting_frequency = $reporting,
-                                    s.requires_local_audit = $audit,
-                                    s.corporate_governance_model = $governance,
-                                    s.is_regulated = $regulated,
-                                    s.is_customer = $customer,
-                                    s.industry_codes = $industry,
-                                    s.customer_id = $cust_id,
-                                    s.customer_onboarding_date = $onboard_date,
-                                    s.customer_risk_rating = $cust_risk,
-                                    s.customer_status = $cust_status
-                                ON MATCH SET
-                                    s.legal_name = $name,
-                                    s.tax_id = $tax_id,
-                                    s.incorporation_country = $country,
-                                    s.incorporation_date = $inc_date,
-                                    s.acquisition_date = $acq_date,
-                                    s.business_type = $type,
-                                    s.operational_status = $status,
-                                    s.parent_ownership_percentage = $ownership,
-                                    s.consolidation_status = $consolidation,
-                                    s.capital_investment = $capital,
-                                    s.functional_currency = $currency,
-                                    s.material_subsidiary = $material,
-                                    s.risk_classification = $risk,
-                                    s.regulatory_status = $reg_status,
-                                    s.local_licenses = $licenses,
-                                    s.integration_status = $integration,
-                                    s.financial_metrics = $metrics,
-                                    s.reporting_frequency = $reporting,
-                                    s.requires_local_audit = $audit,
-                                    s.corporate_governance_model = $governance,
-                                    s.is_regulated = $regulated,
-                                    s.is_customer = $customer,
-                                    s.industry_codes = $industry,
-                                    s.customer_id = $cust_id,
-                                    s.customer_onboarding_date = $onboard_date,
-                                    s.customer_risk_rating = $cust_risk,
-                                    s.customer_status = $cust_status
-                                WITH p, s
-                                MERGE (p)-[:OWNS_SUBSIDIARY {
-                                    ownership_percentage: $ownership,
-                                    acquisition_date: $acq_date
-                                }]->(s)
-                                WITH s
-                                MERGE (c:Country {code: $country})
-                                MERGE (s)-[:INCORPORATED_IN]->(c)
-                                WITH s, $inc_date as inc_date
-                                WHERE inc_date IS NOT NULL
-                                MERGE (bd:BusinessDate {date: inc_date})
-                                MERGE (s)-[:INCORPORATED_ON]->(bd)
-                            """, {
-                                'id': str(row['subsidiary_id']),
-                                'parent_id': str(row['parent_institution_id']),
-                                'name': row['legal_name'],
-                                'tax_id': row['tax_id'],
-                                'country': row['incorporation_country'],
-                                'inc_date': row['incorporation_date'],
-                                'acq_date': row['acquisition_date'],
-                                'type': row['business_type'],
-                                'status': row['operational_status'],
-                                'ownership': float(row['parent_ownership_percentage']),
-                                'consolidation': row['consolidation_status'],
-                                'capital': float(row['capital_investment']),
-                                'currency': row['functional_currency'],
-                                'material': bool(row['material_subsidiary']),
-                                'risk': row['risk_classification'],
-                                'reg_status': row['regulatory_status'],
-                                'licenses': json.dumps(row['local_licenses']),
-                                'integration': row['integration_status'],
-                                'metrics': json.dumps(row['financial_metrics']),
-                                'reporting': row['reporting_frequency'],
-                                'audit': bool(row['requires_local_audit']),
-                                'governance': row['corporate_governance_model'],
-                                'regulated': bool(row['is_regulated']),
-                                'customer': bool(row['is_customer']),
-                                'industry': json.dumps(row.get('industry_codes', [])),
-                                'cust_id': row.get('customer_id'),
-                                'onboard_date': row.get('customer_onboarding_date'),
-                                'cust_risk': row.get('customer_risk_rating'),
-                                'cust_status': row.get('customer_status')
-                            })
-                
-                # Save accounts
-                if 'accounts' in normalized_data and not normalized_data['accounts'].empty:
-                    for i in range(0, len(normalized_data['accounts']), batch_size):
-                        batch = normalized_data['accounts'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
-                            await session.run("""
-                                MERGE (a:Account {account_id: $id})
-                                ON CREATE SET
-                                    a.account_number = $number,
-                                    a.account_type = $type,
-                                    a.balance = $balance,
-                                    a.currency = $currency,
-                                    a.status = $status,
-                                    a.open_date = $open_date,
-                                    a.close_date = $close_date,
-                                    a.risk_rating = $risk_rating
-                                ON MATCH SET
-                                    a.account_number = $number,
-                                    a.account_type = $type,
-                                    a.balance = $balance,
-                                    a.currency = $currency,
-                                    a.status = $status,
-                                    a.open_date = $open_date,
-                                    a.close_date = $close_date,
-                                    a.risk_rating = $risk_rating
-                                WITH a, $open_date as open_date
-                                WHERE open_date IS NOT NULL
-                                MERGE (bd:BusinessDate {date: open_date})
-                                MERGE (a)-[:OPENED_ON]->(bd)
-                                WITH a
-                                MATCH (i:Institution {institution_id: $entity_id})
-                                MERGE (i)-[:HAS_ACCOUNT]->(a)
-                                WITH a
-                                MERGE (bd:BusinessDate {date: $open_date})
-                                MERGE (a)-[:OPENED_ON]->(bd)
-                            """, {
-                                'id': str(row['account_id']),
-                                'number': row['account_number'],
-                                'type': row['account_type'],
-                                'balance': float(row['balance']),
-                                'currency': row['currency'],
-                                'status': row.get('status'),
-                                'open_date': row.get('open_date'),
-                                'close_date': row.get('close_date'),
-                                'risk_rating': row.get('risk_rating'),
-                                'entity_id': str(row['entity_id'])
-                            })
+                                // Create accounts if they don't exist with required fields
+                                MERGE (debit:Account {account_id: $debit_account_id})
+                                ON CREATE SET 
+                                    debit.entity_id = $debit_account_id,
+                                    debit.entity_type = 'Institution',
+                                    debit.account_type = 'Unknown',
+                                    debit.account_number = $debit_account_id,
+                                    debit.currency = $currency,
+                                    debit.status = 'Active',
+                                    debit.opening_date = $transaction_date,
+                                    debit.balance = 0,
+                                    debit.risk_rating = 'Medium'
 
-                # Save transactions
-                if 'transactions' in normalized_data and not normalized_data['transactions'].empty:
-                    for i in range(0, len(normalized_data['transactions']), batch_size):
-                        batch = normalized_data['transactions'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
-                            await session.run("""
-                                CREATE (t:Transaction {
-                                    transaction_id: $id,
+                                WITH debit
+
+                                MERGE (credit:Account {account_id: $credit_account_id})
+                                ON CREATE SET 
+                                    credit.entity_id = $credit_account_id,
+                                    credit.entity_type = 'Institution',
+                                    credit.account_type = 'Unknown',
+                                    credit.account_number = $credit_account_id,
+                                    credit.currency = $currency,
+                                    credit.status = 'Active',
+                                    credit.opening_date = $transaction_date,
+                                    credit.balance = 0,
+                                    credit.risk_rating = 'Medium'
+
+                                WITH debit, credit
+
+                                // Match transaction
+                                MATCH (t:Transaction {transaction_id: $transaction_id})
+
+                                WITH debit, credit, t
+
+                                // Create SENT and RECEIVED relationships
+                                MERGE (debit)-[:SENT {
                                     amount: $amount,
-                                    currency: $currency,
-                                    transaction_type: $type,
-                                    transaction_status: $status,
-                                    transaction_date: $date,
-                                    description: $desc
-                                })
+                                    currency: $currency
+                                }]->(t)
+                                MERGE (t)-[:RECEIVED {
+                                    amount: $amount,
+                                    currency: $currency
+                                }]->(credit)
+
+                                WITH debit, credit, t
+
+                                // Create TRANSACTED relationships
+                                MERGE (debit)-[:TRANSACTED {
+                                    transaction_date: $transaction_date
+                                }]->(t)
+                                MERGE (credit)-[:TRANSACTED {
+                                    transaction_date: $transaction_date
+                                }]->(t)
+
                                 WITH t
-                                MATCH (a:Account {account_id: $account_id})
-                                MERGE (t)-[:BELONGS_TO]->(a)
-                                MERGE (a)-[:TRANSACTED]->(t)
-                                WITH t, $date as date
-                                WHERE date IS NOT NULL
-                                MERGE (bd:BusinessDate {date: date})
-                                MERGE (t)-[:OCCURRED_ON]->(bd)
+
+                                // Create TRANSACTED_ON relationship with BusinessDate
+                                MERGE (d:BusinessDate {date: $transaction_date})
+                                MERGE (t)-[:TRANSACTED_ON]->(d)
                             """, {
-                                'id': str(row['transaction_id']),
-                                'amount': float(row['amount']),
-                                'currency': row['currency'],
-                                'type': row['transaction_type'],
-                                'status': row['transaction_status'],
-                                'date': row['transaction_date'],
-                                'desc': row.get('description'),
-                                'account_id': str(row['account_id'])
+                                'transaction_id': prepared_record['transaction_id'],
+                                'debit_account_id': prepared_record['debit_account_id'],
+                                'credit_account_id': prepared_record['credit_account_id'],
+                                'amount': prepared_record['amount'],
+                                'currency': prepared_record['currency'],
+                                'transaction_date': prepared_record['transaction_date']
+                            })
+                        
+                        elif node_type == 'Account':
+                            # Create HAS_ACCOUNT relationship with Institution
+                            await session.run("""
+                                MATCH (i:Institution {institution_id: $entity_id})
+                                MATCH (a:Account {account_id: $account_id})
+                                MERGE (i)-[:HAS_ACCOUNT]->(a)
+                            """, {
+                                'entity_id': prepared_record['entity_id'],
+                                'account_id': prepared_record['account_id']
+                            })
+                            # Create OPENED_ON relationship with Date
+                            await session.run("""
+                                MATCH (a:Account {account_id: $account_id})
+                                MERGE (d:Date {date: $opening_date})
+                                MERGE (a)-[:OPENED_ON]->(d)
+                            """, {
+                                'account_id': prepared_record['account_id'],
+                                'opening_date': prepared_record['opening_date']
+                            })
+                        
+                        elif node_type == 'RiskAssessment':
+                            # Create HAS_RISK_ASSESSMENT relationship
+                            await session.run("""
+                                MATCH (i:Institution {institution_id: $entity_id})
+                                MATCH (r:RiskAssessment {assessment_id: $assessment_id})
+                                MERGE (i)-[:HAS_RISK_ASSESSMENT]->(r)
+                            """, {
+                                'entity_id': prepared_record['entity_id'],
+                                'assessment_id': prepared_record['assessment_id']
+                            })
+                            
+                        elif node_type == 'Subsidiary':
+                            # Create OWNS_SUBSIDIARY relationship with Institution
+                            await session.run("""
+                                MATCH (i:Institution {institution_id: $parent_institution_id})
+                                MATCH (s:Subsidiary {subsidiary_id: $subsidiary_id})
+                                MERGE (i)-[:OWNS_SUBSIDIARY {
+                                    ownership_percentage: $ownership_percentage,
+                                    acquisition_date: $acquisition_date
+                                }]->(s)
+                            """, {
+                                'parent_institution_id': prepared_record['parent_institution_id'],
+                                'subsidiary_id': prepared_record['subsidiary_id'],
+                                'ownership_percentage': prepared_record['parent_ownership_percentage'],
+                                'acquisition_date': prepared_record['acquisition_date']
                             })
 
-                # Save beneficial owners
-                if 'beneficial_owners' in normalized_data and not normalized_data['beneficial_owners'].empty:
-                    for i in range(0, len(normalized_data['beneficial_owners']), batch_size):
-                        batch = normalized_data['beneficial_owners'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
+                            # Create INCORPORATED_IN relationship with Country
                             await session.run("""
-                                MATCH (e) 
-                                WHERE (e:Institution OR e:Subsidiary) AND 
-                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
-                                MERGE (bo:BeneficialOwner {owner_id: $id})
-                                ON CREATE SET
-                                    bo.name = $name,
-                                    bo.nationality = $nationality,
-                                    bo.country_of_residence = $residence,
-                                    bo.ownership_percentage = $ownership,
-                                    bo.dob = $dob,
-                                    bo.verification_date = $verification_date,
-                                    bo.pep_status = $pep,
-                                    bo.sanctions_status = $sanctions
-                                ON MATCH SET
-                                    bo.name = $name,
-                                    bo.nationality = $nationality,
-                                    bo.country_of_residence = $residence,
-                                    bo.ownership_percentage = $ownership,
-                                    bo.dob = $dob,
-                                    bo.verification_date = $verification_date,
-                                    bo.pep_status = $pep,
-                                    bo.sanctions_status = $sanctions
-                                WITH e, bo
-                                MERGE (e)-[:OWNED_BY {
-                                    ownership_percentage: $ownership,
-                                    verification_date: $verification_date
-                                }]->(bo)
+                                MATCH (s:Subsidiary {subsidiary_id: $subsidiary_id})
+                                MERGE (c:Country {code: $country_code})
+                                MERGE (s)-[:INCORPORATED_IN {
+                                    incorporation_date: $incorporation_date
+                                }]->(c)
+                            """, {
+                                'subsidiary_id': prepared_record['subsidiary_id'],
+                                'country_code': prepared_record['incorporation_country'],
+                                'incorporation_date': prepared_record['incorporation_date']
+                            })
+
+                            # Create INCORPORATED_ON relationship with BusinessDate
+                            await session.run("""
+                                MATCH (s:Subsidiary {subsidiary_id: $subsidiary_id})
+                                MERGE (d:BusinessDate {date: $incorporation_date})
+                                MERGE (s)-[:INCORPORATED_ON]->(d)
+                            """, {
+                                'subsidiary_id': prepared_record['subsidiary_id'],
+                                'incorporation_date': prepared_record['incorporation_date']
+                            })
+
+                            # If subsidiary is also a customer, create IS_CUSTOMER relationship
+                            if prepared_record.get('is_customer', False):
+                                await session.run("""
+                                    MATCH (s:Subsidiary {subsidiary_id: $subsidiary_id})
+                                    MATCH (i:Institution {institution_id: $parent_institution_id})
+                                    MERGE (s)-[:IS_CUSTOMER {
+                                        customer_id: $customer_id,
+                                        customer_onboarding_date: $customer_onboarding_date,
+                                        customer_risk_rating: $customer_risk_rating
+                                    }]->(i)
+                                """, {
+                                    'subsidiary_id': prepared_record['subsidiary_id'],
+                                    'parent_institution_id': prepared_record['parent_institution_id'],
+                                    'customer_id': prepared_record.get('customer_id'),
+                                    'customer_onboarding_date': prepared_record.get('customer_onboarding_date'),
+                                    'customer_risk_rating': prepared_record.get('customer_risk_rating')
+                                })
+
+                        elif node_type == 'Institution':
+                            # Create INCORPORATED_IN relationship with Country
+                            await session.run("""
+                                MATCH (i:Institution {institution_id: $institution_id})
+                                MERGE (c:Country {code: $country_code})
+                                MERGE (i)-[:INCORPORATED_IN {
+                                    incorporation_date: $incorporation_date
+                                }]->(c)
+                            """, {
+                                'institution_id': prepared_record['institution_id'],
+                                'country_code': prepared_record['incorporation_country'],
+                                'incorporation_date': prepared_record['incorporation_date']
+                            })
+
+                            # Create INCORPORATED_ON relationship with BusinessDate
+                            await session.run("""
+                                MATCH (i:Institution {institution_id: $institution_id})
+                                MERGE (d:BusinessDate {date: $incorporation_date})
+                                MERGE (i)-[:INCORPORATED_ON]->(d)
+                            """, {
+                                'institution_id': prepared_record['institution_id'],
+                                'incorporation_date': prepared_record['incorporation_date']
+                            })
+
+                        elif node_type == 'Document':
+                            # Create HAS_DOCUMENT relationship
+                            await session.run("""
+                                MATCH (d:Document {document_id: $document_id})
+                                
+                                // Try to match Institution or Subsidiary based on entity_type
+                                OPTIONAL MATCH (i:Institution {institution_id: $entity_id})
+                                OPTIONAL MATCH (s:Subsidiary {subsidiary_id: $entity_id})
+                                
+                                WITH d, 
+                                     CASE WHEN i IS NOT NULL THEN i 
+                                          WHEN s IS NOT NULL THEN s 
+                                          ELSE null END as entity
+                                
+                                // Create relationship only if entity exists
+                                FOREACH (e IN CASE WHEN entity IS NOT NULL THEN [entity] ELSE [] END |
+                                    MERGE (e)-[:HAS_DOCUMENT {
+                                        document_type: $document_type
+                                    }]->(d)
+                                )
+                                
+                                WITH d
+                                
+                                // Create ISSUED_ON relationship with BusinessDate
+                                MERGE (bd:BusinessDate {date: $issue_date})
+                                MERGE (d)-[:ISSUED_ON]->(bd)
+                            """, {
+                                'document_id': prepared_record['document_id'],
+                                'entity_id': prepared_record['entity_id'],
+                                'entity_type': prepared_record['entity_type'].lower(),
+                                'document_type': prepared_record['document_type'],
+                                'issue_date': prepared_record['issue_date']
+                            })
+
+                        elif node_type == 'BeneficialOwner':
+                            # Create OWNED_BY and CITIZEN_OF relationships
+                            await session.run("""
+                                MATCH (bo:BeneficialOwner {owner_id: $owner_id})
+                                
+                                // Try to match Institution or Subsidiary based on entity_type
+                                OPTIONAL MATCH (i:Institution {institution_id: $entity_id})
+                                OPTIONAL MATCH (s:Subsidiary {subsidiary_id: $entity_id})
+                                
+                                WITH bo, 
+                                     CASE WHEN i IS NOT NULL THEN i 
+                                          WHEN s IS NOT NULL THEN s 
+                                          ELSE null END as entity
+                                
+                                // Create OWNED_BY relationship if entity exists
+                                FOREACH (e IN CASE WHEN entity IS NOT NULL THEN [entity] ELSE [] END |
+                                    MERGE (e)-[:OWNED_BY {
+                                        ownership_percentage: $ownership_percentage,
+                                        verification_date: $verification_date
+                                    }]->(bo)
+                                )
+                                
                                 WITH bo
+                                
+                                // Create CITIZEN_OF relationship
                                 MERGE (c:Country {code: $nationality})
                                 MERGE (bo)-[:CITIZEN_OF]->(c)
                             """, {
-                                'id': str(row['owner_id']),
-                                'entity_id': str(row['entity_id']),
-                                'name': row['name'],
-                                'nationality': row['nationality'],
-                                'residence': row['country_of_residence'],
-                                'ownership': float(row['ownership_percentage']),
-                                'dob': row['dob'],
-                                'verification_date': row['verification_date'],
-                                'pep': bool(row['pep_status']),
-                                'sanctions': bool(row['sanctions_status'])
-                            })
-                
-                # Save addresses
-                if 'addresses' in normalized_data and not normalized_data['addresses'].empty:
-                    for i in range(0, len(normalized_data['addresses']), batch_size):
-                        batch = normalized_data['addresses'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
-                            await session.run("""
-                                MATCH (e) 
-                                WHERE (e:Institution OR e:Subsidiary) AND 
-                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
-                                MERGE (a:Address {address_id: $id})
-                                ON CREATE SET
-                                    a.address_type = $type,
-                                    a.address_line1 = $line1,
-                                    a.address_line2 = $line2,
-                                    a.city = $city,
-                                    a.state_province = $state,
-                                    a.postal_code = $postal,
-                                    a.country = $country
-                                ON MATCH SET
-                                    a.address_type = $type,
-                                    a.address_line1 = $line1,
-                                    a.address_line2 = $line2,
-                                    a.city = $city,
-                                    a.state_province = $state,
-                                    a.postal_code = $postal,
-                                    a.country = $country
-                                WITH e, a
-                                MERGE (e)-[:HAS_ADDRESS {
-                                    address_type: $type,
-                                    effective_from: $effective_from
-                                }]->(a)
-                                WITH a
-                                MERGE (c:Country {code: $country})
-                                MERGE (a)-[:LOCATED_IN]->(c)
-                            """, {
-                                'id': str(row['address_id']),
-                                'entity_id': str(row['entity_id']),
-                                'type': row['address_type'],
-                                'line1': row['address_line1'],
-                                'line2': row.get('address_line2'),
-                                'city': row['city'],
-                                'state': row.get('state_province'),
-                                'postal': row.get('postal_code'),
-                                'country': row['country'],
-                                'effective_from': row['effective_from']
+                                'owner_id': prepared_record['owner_id'],
+                                'entity_id': prepared_record['entity_id'],
+                                'entity_type': prepared_record['entity_type'].lower(),
+                                'ownership_percentage': prepared_record['ownership_percentage'],
+                                'verification_date': prepared_record['verification_date'],
+                                'nationality': prepared_record['nationality']
                             })
 
-                # Save risk assessments
-                if 'risk_assessments' in normalized_data and not normalized_data['risk_assessments'].empty:
-                    for i in range(0, len(normalized_data['risk_assessments']), batch_size):
-                        batch = normalized_data['risk_assessments'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
+                        elif node_type == 'AuthorizedPerson':
+                            # Create HAS_AUTHORIZED_PERSON and CITIZEN_OF relationships
                             await session.run("""
-                                MATCH (e) 
-                                WHERE (e:Institution OR e:Subsidiary) AND 
-                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
-                                MERGE (r:RiskAssessment {assessment_id: $id})
-                                ON CREATE SET
-                                    r.assessment_date = $date,
-                                    r.risk_rating = $rating,
-                                    r.risk_score = $score,
-                                    r.assessment_type = $type,
-                                    r.risk_factors = $factors,
-                                    r.conducted_by = $assessor,
-                                    r.next_review_date = $next_review
-                                ON MATCH SET
-                                    r.assessment_date = $date,
-                                    r.risk_rating = $rating,
-                                    r.risk_score = $score,
-                                    r.assessment_type = $type,
-                                    r.risk_factors = $factors,
-                                    r.conducted_by = $assessor,
-                                    r.next_review_date = $next_review
-                                WITH e, r
-                                MERGE (e)-[:HAS_RISK_ASSESSMENT]->(r)
-                                WITH r, $date as date
-                                WHERE date IS NOT NULL
-                                MERGE (bd:BusinessDate {date: date})
-                                MERGE (r)-[:ASSESSED_ON]->(bd)
+                                MATCH (ap:AuthorizedPerson {person_id: $person_id})
+                                
+                                // Try to match Institution or Subsidiary based on entity_type
+                                OPTIONAL MATCH (i:Institution {institution_id: $entity_id})
+                                OPTIONAL MATCH (s:Subsidiary {subsidiary_id: $entity_id})
+                                
+                                WITH ap, 
+                                     CASE WHEN i IS NOT NULL THEN i 
+                                          WHEN s IS NOT NULL THEN s 
+                                          ELSE null END as entity
+                                
+                                // Create HAS_AUTHORIZED_PERSON relationship if entity exists
+                                FOREACH (e IN CASE WHEN entity IS NOT NULL THEN [entity] ELSE [] END |
+                                    MERGE (e)-[:HAS_AUTHORIZED_PERSON {
+                                        title: $title,
+                                        authorization_date: $authorization_start
+                                    }]->(ap)
+                                )
+                                
+                                WITH ap
+                                
+                                // Create CITIZEN_OF relationship if nationality exists
+                                FOREACH (nat IN CASE WHEN $nationality IS NOT NULL THEN [$nationality] ELSE [] END |
+                                    MERGE (c:Country {code: nat})
+                                    MERGE (ap)-[:CITIZEN_OF]->(c)
+                                )
                             """, {
-                                'id': str(row['assessment_id']),
-                                'entity_id': str(row['entity_id']),
-                                'date': row['assessment_date'],
-                                'rating': row['risk_rating'],
-                                'score': float(row['risk_score']),
-                                'type': row['assessment_type'],
-                                'factors': json.dumps(row['risk_factors']),
-                                'assessor': row.get('conducted_by'),
-                                'next_review': row.get('next_review_date')
+                                'person_id': prepared_record['person_id'],
+                                'entity_id': prepared_record['entity_id'],
+                                'entity_type': prepared_record['entity_type'].lower(),
+                                'title': prepared_record['title'],
+                                'authorization_start': prepared_record['authorization_start'],
+                                'nationality': prepared_record.get('nationality')
                             })
 
-                # Save authorized persons
-                if 'authorized_persons' in normalized_data and not normalized_data['authorized_persons'].empty:
-                    for i in range(0, len(normalized_data['authorized_persons']), batch_size):
-                        batch = normalized_data['authorized_persons'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
+                        elif node_type == 'ComplianceEvent':
+                            # Create HAS_COMPLIANCE_EVENT relationship
                             await session.run("""
-                                MATCH (e) 
-                                WHERE (e:Institution OR e:Subsidiary) AND 
-                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
-                                MERGE (p:AuthorizedPerson {person_id: $id})
-                                ON CREATE SET
-                                    p.name = $name,
-                                    p.title = $title,
-                                    p.authorization_level = $auth_level,
-                                    p.authorization_type = $auth_type,
-                                    p.authorization_start = $auth_start,
-                                    p.authorization_end = $auth_end,
-                                    p.contact_info = $contact_info,
-                                    p.is_active = $active,
-                                    p.last_verification_date = $verification_date
-                                ON MATCH SET
-                                    p.name = $name,
-                                    p.title = $title,
-                                    p.authorization_level = $auth_level,
-                                    p.authorization_type = $auth_type,
-                                    p.authorization_start = $auth_start,
-                                    p.authorization_end = $auth_end,
-                                    p.contact_info = $contact_info,
-                                    p.is_active = $active,
-                                    p.last_verification_date = $verification_date
-                                WITH e, p
-                                MERGE (e)-[:HAS_AUTHORIZED_PERSON {
-                                    title: $title,
-                                    authorization_date: $auth_start
-                                }]->(p)
-                                WITH p
-                                MERGE (c:Country {code: $nationality})
-                                MERGE (p)-[:CITIZEN_OF]->(c)
+                                MATCH (ce:ComplianceEvent {event_id: $event_id})
+                                
+                                // Try to match Institution or Subsidiary based on entity_type
+                                OPTIONAL MATCH (i:Institution {institution_id: $entity_id})
+                                OPTIONAL MATCH (s:Subsidiary {subsidiary_id: $entity_id})
+                                
+                                WITH ce, 
+                                     CASE WHEN i IS NOT NULL THEN i 
+                                          WHEN s IS NOT NULL THEN s 
+                                          ELSE null END as entity
+                                
+                                // Create HAS_COMPLIANCE_EVENT relationship if entity exists
+                                FOREACH (e IN CASE WHEN entity IS NOT NULL THEN [entity] ELSE [] END |
+                                    MERGE (e)-[:HAS_COMPLIANCE_EVENT]->(ce)
+                                )
                             """, {
-                                'id': str(row['person_id']),
-                                'entity_id': str(row['entity_id']),
-                                'name': row['name'],
-                                'title': row['title'],
-                                'auth_level': row['authorization_level'],
-                                'auth_type': row['authorization_type'],
-                                'auth_start': row['authorization_start'],
-                                'auth_end': row.get('authorization_end'),
-                                'contact_info': json.dumps(row['contact_info']),
-                                'active': bool(row['is_active']),
-                                'verification_date': row.get('last_verification_date'),
-                                'nationality': row.get('nationality', 'US')  # Default to US if not specified
+                                'event_id': prepared_record['event_id'],
+                                'entity_id': prepared_record['entity_id'],
+                                'entity_type': prepared_record['entity_type'].lower()
                             })
 
-                # Save documents
-                if 'documents' in normalized_data and not normalized_data['documents'].empty:
-                    for i in range(0, len(normalized_data['documents']), batch_size):
-                        batch = normalized_data['documents'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
+                        elif node_type == 'RiskAssessment':
+                            # Create HAS_RISK_ASSESSMENT relationship
                             await session.run("""
-                                MATCH (e) 
-                                WHERE (e:Institution OR e:Subsidiary) AND 
-                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
-                                MERGE (d:Document {document_id: $id})
-                                ON CREATE SET
-                                    d.document_type = $type,
-                                    d.document_number = $number,
-                                    d.issuing_authority = $authority,
-                                    d.issuing_country = $country,
-                                    d.issue_date = $issue_date,
-                                    d.expiry_date = $expiry_date,
-                                    d.verification_status = $status,
-                                    d.verification_date = $verification_date
-                                ON MATCH SET
-                                    d.document_type = $type,
-                                    d.document_number = $number,
-                                    d.issuing_authority = $authority,
-                                    d.issuing_country = $country,
-                                    d.issue_date = $issue_date,
-                                    d.expiry_date = $expiry_date,
-                                    d.verification_status = $status,
-                                    d.verification_date = $verification_date
-                                WITH e, d
-                                MERGE (e)-[:HAS_DOCUMENT {document_type: $type}]->(d)
-                                WITH d, $issue_date as issue_date
-                                WHERE issue_date IS NOT NULL
-                                MERGE (bd:BusinessDate {date: issue_date})
-                                MERGE (d)-[:ISSUED_ON]->(bd)
-                                WITH d
-                                MERGE (c:Country {code: $country})
-                                MERGE (d)-[:ISSUED_IN]->(c)
+                                MATCH (ra:RiskAssessment {assessment_id: $assessment_id})
+                                
+                                // Try to match Institution or Subsidiary based on entity_type
+                                OPTIONAL MATCH (i:Institution {institution_id: $entity_id})
+                                OPTIONAL MATCH (s:Subsidiary {subsidiary_id: $entity_id})
+                                
+                                WITH ra, 
+                                     CASE WHEN i IS NOT NULL THEN i 
+                                          WHEN s IS NOT NULL THEN s 
+                                          ELSE null END as entity
+                                
+                                // Create HAS_RISK_ASSESSMENT relationship if entity exists
+                                FOREACH (e IN CASE WHEN entity IS NOT NULL THEN [entity] ELSE [] END |
+                                    MERGE (e)-[:HAS_RISK_ASSESSMENT]->(ra)
+                                )
                             """, {
-                                'id': str(row['document_id']),
-                                'entity_id': str(row['entity_id']),
-                                'type': row['document_type'],
-                                'number': row['document_number'],
-                                'authority': row['issuing_authority'],
-                                'country': row['issuing_country'],
-                                'issue_date': row['issue_date'],
-                                'expiry_date': row['expiry_date'],
-                                'status': row['verification_status'],
-                                'verification_date': row.get('verification_date')
+                                'assessment_id': prepared_record['assessment_id'],
+                                'entity_id': prepared_record['entity_id'],
+                                'entity_type': prepared_record['entity_type'].lower()
                             })
 
-                # Save compliance events
-                if 'compliance_events' in normalized_data and not normalized_data['compliance_events'].empty:
-                    for i in range(0, len(normalized_data['compliance_events']), batch_size):
-                        batch = normalized_data['compliance_events'].iloc[i:i + batch_size]
-                        for _, row in batch.iterrows():
-                            await session.run("""
-                                MATCH (e) 
-                                WHERE (e:Institution OR e:Subsidiary) AND 
-                                      (e.institution_id = $entity_id OR e.subsidiary_id = $entity_id)
-                                MERGE (ce:ComplianceEvent {event_id: $id})
-                                ON CREATE SET
-                                    ce.event_type = $type,
-                                    ce.event_date = $date,
-                                    ce.severity = $severity,
-                                    ce.status = $status,
-                                    ce.description = $desc,
-                                    ce.reported_by = $reporter,
-                                    ce.resolution = $resolution,
-                                    ce.resolution_date = $resolution_date
-                                ON MATCH SET
-                                    ce.event_type = $type,
-                                    ce.event_date = $date,
-                                    ce.severity = $severity,
-                                    ce.status = $status,
-                                    ce.description = $desc,
-                                    ce.reported_by = $reporter,
-                                    ce.resolution = $resolution,
-                                    ce.resolution_date = $resolution_date
-                                WITH e, ce
-                                MERGE (e)-[:HAS_COMPLIANCE_EVENT]->(ce)
-                                WITH ce, $date as date
-                                WHERE date IS NOT NULL
-                                MERGE (bd:BusinessDate {date: date})
-                                MERGE (ce)-[:OCCURRED_ON]->(bd)
-                                WITH ce
-                                MATCH (a:Account {account_id: $related_account_id})
-                                MERGE (ce)-[:RELATED_TO]->(a)
-                            """, {
-                                'id': str(row['event_id']),
-                                'entity_id': str(row['entity_id']),
-                                'related_account_id': str(row['related_account_id']),
-                                'type': row['event_type'],
-                                'date': row['event_date'],
-                                'severity': row.get('severity', 'medium'),
-                                'status': row.get('status', 'open'),
-                                'desc': row['event_description'],
-                                'reporter': row.get('decision_maker'),
-                                'resolution': row.get('decision'),
-                                'resolution_date': row.get('decision_date')
-                            })
+                    except Exception as e:
+                        failed_items.append({
+                            'record': record,
+                            'error': str(e),
+                            'node_type': node_type,
+                            'prepared_record': prepared_record
+                        })
+                        print(f"Failed to save {node_type} record: {str(e)}")
+                        print(f"Record: {record}")
+                        print(f"Prepared record: {prepared_record}")
 
-            self._log_operation('save_batch', {'status': 'success'})
+                if failed_items:
+                    raise BatchError(f"Failed to save {len(failed_items)} records", failed_items=failed_items)
             
+            self._log_operation('save_batch', {
+                'status': 'success',
+                'node_type': node_type,
+                'record_count': len(records)
+            })
+            
+        except BatchError:
+            raise
         except Exception as e:
-            self._log_operation('save_batch', 
-                              {'status': 'failed', 'error': str(e)})
-            raise BatchError(f"Failed to save batch: {str(e)}", [])
+            failed_items = [{
+                'record': record,
+                'error': str(e)
+            } for record in records]
+            self._log_operation('save_batch', {
+                'status': 'failed',
+                'node_type': node_type,
+                'error': str(e)
+            })
+            if isinstance(e, (ValidationError, SchemaError)):
+                raise
+            raise BatchError(f"Failed to save batch: {str(e)}", failed_items=failed_items)
     
     async def save_to_neo4j(self, data: Dict[str, pd.DataFrame]) -> None:
         """Save data to Neo4j database."""
@@ -919,21 +832,15 @@ class Neo4jHandler(DatabaseHandler):
     async def wipe_clean(self) -> None:
         """Wipe all data from the database while preserving indexes and constraints."""
         try:
-            if not self.is_connected:
-                raise ConnectionError("Not connected to database")
-
             async with self.driver.session() as session:
-                # Delete all nodes and relationships
-                await session.run("""
-                    MATCH (n)
-                    DETACH DELETE n
-                """)
-            
+                # Delete all relationships first
+                await session.run("MATCH ()-[r]-() DELETE r")
+                # Then delete all nodes
+                await session.run("MATCH (n) DELETE n")
+                
             self._log_operation('wipe_clean', {'status': 'success'})
-            
         except Exception as e:
-            self._log_operation('wipe_clean', 
-                              {'status': 'failed', 'error': str(e)})
+            self._log_operation('wipe_clean', {'status': 'failed', 'error': str(e)})
             raise DatabaseError(f"Failed to wipe database: {str(e)}")
     
     async def healthcheck(self) -> bool:
@@ -966,7 +873,7 @@ class Neo4jHandler(DatabaseHandler):
             },
             'transactions': {
                 'transaction_id', 'account_id', 'transaction_type', 'transaction_date',
-                'amount', 'currency', 'transaction_status', 'is_debit'
+                'amount', 'currency', 'transaction_status', 'is_debit', 'debit_account_id', 'credit_account_id'
             },
             'beneficial_owners': {
                 'owner_id', 'entity_id', 'entity_type', 'name',
@@ -1006,19 +913,124 @@ class Neo4jHandler(DatabaseHandler):
                 'reporting_frequency', 'requires_local_audit', 'corporate_governance_model',
                 'is_regulated', 'is_customer', 'industry_codes', 'customer_id',
                 'customer_onboarding_date', 'customer_risk_rating', 'customer_status'
+            },
+            'entities': {
+                'entity_id', 'entity_type', 'created_at', 'updated_at'
             }
         }
         return required_fields.get(table_name, set())
 
-    def _convert_enum_to_str(self, value: Any) -> str:
-        """Convert enum values to strings for Neo4j storage."""
-        if hasattr(value, 'value'):  # Check if it's an enum
-            return value.value
-        return value
+    def _validate_record(self, table_name: str, record: Dict[str, Any]) -> None:
+        """Validate a record against the schema."""
+        node_type = self._get_node_type(table_name)
+        if node_type not in self.NODE_SCHEMAS:
+            raise ValidationError(f"Invalid node label: {node_type}")
+            
+        schema = self.NODE_SCHEMAS[node_type]
+        missing_fields = set(schema['required']) - set(record.keys())
+        if missing_fields:
+            raise ValidationError(f"Missing required fields for {node_type}: {missing_fields}")
 
-    def _prepare_properties(self, properties: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare properties for Neo4j storage by converting enums to strings."""
-        return {k: self._convert_enum_to_str(v) for k, v in properties.items()}
+    def _prepare_properties(self, record: dict) -> dict:
+        """Prepare properties for Neo4j by converting data types."""
+        prepared = {}
+        
+        # Convert all values to Neo4j compatible types
+        for key, value in record.items():
+            if value is None:
+                # Handle null values based on field type
+                if key in ['risk_score', 'amount', 'total_amount', 'avg_risk_score', 'processing_fee', 'exchange_rate']:
+                    value = 0.0
+                elif key in ['transaction_count', 'alert_count']:
+                    value = 0
+                elif key in ['screening_alert', 'material_subsidiary']:
+                    value = False
+                else:
+                    continue  # Skip null values for other fields
+                
+            try:
+                if key == 'incorporation_date' or key == 'opening_date':
+                    if isinstance(value, (int, float)):
+                        raise ValidationError(f"Field {key} must be a date string, got {type(value)}")
+                    if isinstance(value, str):
+                        # Validate date format (YYYY-MM-DD)
+                        datetime.strptime(value, '%Y-%m-%d')
+                    prepared[key] = value
+                elif key == 'transaction_date' or key == 'assessment_date' or key == 'created_at' or key == 'updated_at':
+                    if isinstance(value, (int, float)):
+                        raise ValidationError(f"Field {key} must be a datetime string, got {type(value)}")
+                    if isinstance(value, str):
+                        # Try parsing as ISO format first
+                        try:
+                            datetime.fromisoformat(value.replace('Z', '+00:00'))
+                        except ValueError:
+                            # Fall back to date-only format
+                            datetime.strptime(value, '%Y-%m-%d')
+                    prepared[key] = value
+                elif isinstance(value, (datetime, date)):
+                    prepared[key] = value.isoformat()
+                elif isinstance(value, UUID):
+                    prepared[key] = str(value)
+                elif isinstance(value, Enum):
+                    prepared[key] = value.value
+                elif isinstance(value, bool):
+                    prepared[key] = bool(value)  # Ensure it's a proper boolean
+                elif isinstance(value, (int, float)):
+                    if key == 'material_subsidiary':  # Special handling for material_subsidiary
+                        prepared[key] = bool(value)
+                    else:
+                        prepared[key] = float(value) if isinstance(value, float) or '.' in str(value) else int(value)
+                elif isinstance(value, (dict, list)):
+                    prepared[key] = json.dumps(value)
+                else:
+                    prepared[key] = str(value)
+            except (ValueError, TypeError) as e:
+                raise ValidationError(f"Invalid value for field {key}: {str(e)}")
+                
+        # Map ID fields based on node type and ensure they are strings
+        if 'entity_id' in record:
+            prepared['id'] = str(record['entity_id'])
+        elif 'institution_id' in record:
+            prepared['id'] = str(record['institution_id'])
+        elif 'subsidiary_id' in record:
+            prepared['id'] = str(record['subsidiary_id'])
+        elif 'assessment_id' in record:
+            prepared['id'] = str(record['assessment_id'])
+        elif 'person_id' in record:
+            prepared['id'] = str(record['person_id'])
+        elif 'event_id' in record:
+            prepared['id'] = str(record['event_id'])
+        elif 'transaction_id' in record:
+            prepared['id'] = str(record['transaction_id'])
+            prepared['transaction_id'] = str(record['transaction_id'])
+        elif 'account_id' in record:
+            prepared['id'] = str(record['account_id'])
+            prepared['account_id'] = str(record['account_id'])
+            
+        # Ensure specific fields are strings
+        string_fields = ['account_id', 'entity_id', 'currency']
+        for field in string_fields:
+            if field in prepared:
+                prepared[field] = str(prepared[field])
+                
+        return prepared
+
+    async def insert_data(self, table_name: str, data: List[Dict[str, Any]], batch_size: int = 1000) -> None:
+        """Insert data into Neo4j database.
+        
+        Args:
+            table_name (str): Name of the table/node type to insert data into
+            data (List[Dict[str, Any]]): List of dictionaries containing the data to insert
+            batch_size (int, optional): Number of records to insert at once. Defaults to 1000.
+        """
+        if not data:
+            return
+            
+        # Convert list of dicts to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Save the data using save_batch
+        await self.save_batch(table_name, data)
 
     async def create_node(self, label: str, properties: Dict[str, Any]) -> None:
         """Create a node with the given label and properties."""
@@ -1051,3 +1063,13 @@ class Neo4jHandler(DatabaseHandler):
             self._log_operation('create_node', 
                               {'status': 'failed', 'error': str(e)})
             raise DatabaseError(f"Failed to create node: {str(e)}")
+
+    async def initialize(self) -> None:
+        """Initialize database connection and create constraints if they don't exist."""
+        try:
+            await self.connect()
+            await self.create_schema()
+            self._log_operation('initialize', {'status': 'success'})
+        except Exception as e:
+            self._log_operation('initialize', {'status': 'failed', 'error': str(e)})
+            raise DatabaseInitializationError(f"Failed to initialize Neo4j database: {str(e)}")

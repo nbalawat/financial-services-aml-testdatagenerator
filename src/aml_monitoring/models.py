@@ -4,6 +4,7 @@ from datetime import date
 from enum import Enum
 import json
 from datetime import datetime
+from uuid import UUID, uuid4
 
 class BusinessType(str, Enum):
     HEDGE_FUND = 'hedge_fund'
@@ -23,6 +24,15 @@ class RiskRating(str, Enum):
     LOW = 'low'
     MEDIUM = 'medium'
     HIGH = 'high'
+
+class Entity(BaseModel):
+    """Entity model for both institutions and subsidiaries."""
+    entity_id: UUID
+    entity_type: str  # 'institution' or 'subsidiary'
+    parent_entity_id: Optional[UUID]  # NULL for institutions, parent_institution_id for subsidiaries
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: Optional[datetime]
 
 class Institution(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -77,7 +87,7 @@ class Institution(BaseModel):
 class Subsidiary(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
-    subsidiary_id: str
+    subsidiary_id: str = Field(default_factory=lambda: str(uuid4()))
     parent_institution_id: str
     legal_name: str
     tax_id: str
@@ -90,22 +100,27 @@ class Subsidiary(BaseModel):
     consolidation_status: str
     capital_investment: float
     functional_currency: str
-    material_subsidiary: bool
+    material_subsidiary: bool = Field(default=False)  # Explicitly set type and default
     risk_classification: str
     regulatory_status: str
     local_licenses: List[str]
     integration_status: str
+    revenue: float
+    assets: float
+    liabilities: float
     financial_metrics: Dict[str, float]
     reporting_frequency: str
     requires_local_audit: bool
     corporate_governance_model: str
     is_regulated: bool
     is_customer: bool
-    industry_codes: List[str]
     customer_id: Optional[str] = None
     customer_onboarding_date: Optional[str] = None
     customer_risk_rating: Optional[str] = None
     customer_status: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now().replace(microsecond=0))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now().replace(microsecond=0))
+    deleted_at: Optional[datetime] = None
 
     @field_validator('acquisition_date')
     @classmethod
@@ -113,21 +128,6 @@ class Subsidiary(BaseModel):
         if 'incorporation_date' in info.data and v < info.data['incorporation_date']:
             raise ValueError('acquisition_date must be after incorporation_date')
         return v
-
-    @model_validator(mode='after')
-    def validate_customer_fields(self) -> 'Subsidiary':
-        if self.is_customer:
-            if not all([
-                self.customer_id,
-                self.customer_onboarding_date,
-                self.customer_risk_rating,
-                self.customer_status
-            ]):
-                raise ValueError('All customer fields (customer_id, customer_onboarding_date, customer_risk_rating, customer_status) are required when is_customer is True')
-            
-            if self.customer_onboarding_date < self.incorporation_date:
-                raise ValueError('customer_onboarding_date must be after incorporation_date')
-        return self
 
 class Address(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -148,14 +148,20 @@ class Address(BaseModel):
     primary_address: bool
     validation_status: str
     last_verified: str
-    geo_coordinates: Dict[str, float]
+    latitude: float
+    longitude: float
     timezone: str
-
+    
     @field_validator('effective_to')
     @classmethod
     def effective_to_after_from(cls, v: Optional[str], info) -> Optional[str]:
-        if v and 'effective_from' in info.data and v < info.data['effective_from']:
-            raise ValueError('effective_to must be after effective_from')
+        if v is None:
+            return v
+        if 'effective_from' in info.data:
+            from_date = datetime.strptime(info.data['effective_from'], '%Y-%m-%d').date()
+            to_date = datetime.strptime(v, '%Y-%m-%d').date()
+            if to_date < from_date:
+                raise ValueError('effective_to must be after effective_from')
         return v
 
 class RiskAssessment(BaseModel):
@@ -215,6 +221,7 @@ class AuthorizedPerson(BaseModel):
     contact_info: Dict[str, str]
     is_active: bool
     last_verification_date: Optional[str] = None
+    nationality: str
 
     @field_validator('authorization_end')
     @classmethod
@@ -284,36 +291,6 @@ class Account(BaseModel):
     account_officer: Optional[str] = None
     custodian_country: Optional[str] = None
 
-class SubsidiaryRelationship(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    
-    relationship_id: str
-    subsidiary_id: str
-    related_subsidiary_id: str
-    relationship_type: str
-    nature_of_business: str
-    service_agreements: Dict[str, Union[str, List[str]]]
-    annual_transaction_volume: float = Field(gt=0)
-    transfer_pricing_model: str
-    relationship_start: str
-    approval_status: str
-    risk_factors: Dict[str, int]
-
-    @field_validator('risk_factors')
-    @classmethod
-    def validate_risk_factors(cls, v: Dict[str, int]) -> Dict[str, int]:
-        for score in v.values():
-            if not 1 <= score <= 5:
-                raise ValueError('Risk factor scores must be between 1 and 5')
-        return v
-
-    @field_validator('related_subsidiary_id')
-    @classmethod
-    def different_subsidiaries(cls, v: str, info) -> str:
-        if 'subsidiary_id' in info.data and v == info.data['subsidiary_id']:
-            raise ValueError('related_subsidiary_id must be different from subsidiary_id')
-        return v
-
 class ComplianceEventType(str, Enum):
     ONBOARDING = 'onboarding'
     ACCOUNT_OPENED = 'account_opened'
@@ -344,20 +321,6 @@ class ComplianceEvent(BaseModel):
     related_account_id: str
     notes: Optional[str] = None
 
-class Customer(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    
-    customer_id: str
-    institution_id: str
-    customer_type: str
-    customer_status: str
-    onboarding_date: str
-    risk_rating: str
-    compliance_status: str
-    reporting_requirements: Dict[str, Union[str, List[str]]]
-    supervisory_authority: str
-    material_customer_flag: bool
-
 class TransactionType(str, Enum):
     ACH = 'ach'
     WIRE = 'wire'
@@ -383,7 +346,8 @@ class Transaction(BaseModel):
     account_id: str
     entity_id: str
     entity_type: str
-    
+    debit_account_id: str
+    credit_account_id: str
     counterparty_account: Optional[str] = None
     counterparty_name: Optional[str] = None
     counterparty_bank: Optional[str] = None
