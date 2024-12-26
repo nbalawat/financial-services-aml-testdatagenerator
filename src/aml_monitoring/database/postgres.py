@@ -1008,6 +1008,6 @@ class PostgresHandler(DatabaseHandler):
         except Exception as e:
             raise DatabaseError(f"Error fetching data: {str(e)}")
 
-    def _log_operation(self, operation: str, details: Dict[str, Any]) -> None:
-        """Log database operations."""
-        self.logger.info(f"PostgreSQL operation: {operation}", extra=details)
+    def _log_operation(self, operation: str, details: Optional[Dict] = None):
+        """Log database operations - disabled for cleaner output."""
+        pass

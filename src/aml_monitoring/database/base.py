@@ -114,16 +114,8 @@ class DatabaseHandler(ABC):
         return required_fields.get(table_name, set())
 
     def _log_operation(self, operation: str, details: Optional[Dict] = None):
-        """Log database operation with details."""
-        log_entry = {
-            'timestamp': datetime.utcnow().isoformat(),
-            'operation': operation,
-            'handler': self.__class__.__name__,
-        }
-        if details:
-            log_entry.update(details)
-        
-        self.logger.info(f"Database operation: {log_entry}")
+        """Log database operations - disabled for cleaner output."""
+        pass
     
         
     @abstractmethod

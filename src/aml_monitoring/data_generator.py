@@ -26,29 +26,29 @@ from .generators import (
     DocumentGenerator, JurisdictionPresenceGenerator
 )
 from .database import PostgresHandler, Neo4jHandler
-from tqdm import tqdm
+from .database.exceptions import DatabaseError, BatchError
 
 logger = logging.getLogger(__name__)
 
 class ProgressTracker:
-    """Tracks progress of data generation with tqdm."""
+    """Tracks progress of data generation."""
     
     def __init__(self, total: int, description: str = None):
         self.total = total
         self.description = description
-        self.pbar = None
+        self.current = 0
         
     async def __aenter__(self):
-        self.pbar = tqdm(range(self.total), desc=self.description)
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.pbar:
-            self.pbar.close()
-            
-    async def update(self, n: int = 1):
-        if self.pbar:
-            self.pbar.update(n)
+        pass
+        
+    def update(self, n: int = 1):
+        """Update progress."""
+        self.current += n
+        if self.current % 100 == 0:  # Only log every 100 items
+            logger.warning(f"{self.description}: {self.current}/{self.total}")
 
 class DataGenerator:
     """Main class for orchestrating data generation."""
@@ -93,30 +93,30 @@ class DataGenerator:
         return pd.DataFrame([item.model_dump() for item in data])
 
     async def persist_batch(self, batch_data: Dict[str, List[Any]], batch_size: Optional[int] = None):
-        """
-        Persist a batch of data to both databases.
-
-        Args:
-            batch_data (Dict[str, List[Any]]): Dictionary mapping data types to lists of Pydantic models
-            batch_size (Optional[int], optional): Batch size for database operations. If not provided,
-                will use the batch size from config. Defaults to None.
-        """
-        batch_size = batch_size or self.config.get('batch_size', 1000)
-
-        # Convert to DataFrames for Postgres
-        df_data = {
-            data_type: self._convert_to_dataframe(items)
-            for data_type, items in batch_data.items()
-        }
-
-        # Save to PostgreSQL
-        await self.postgres_handler.save_batch(df_data)
-
-        # Save to Neo4j - handle each table separately
-        for table_name, items in batch_data.items():
-            # Convert Pydantic models to dicts
-            records = [item.model_dump() for item in items]
-            await self.neo4j_handler.save_batch(table_name, records)
+        """Persist a batch of data to both databases."""
+        try:
+            # Convert batch data to DataFrames
+            df_data = {}
+            for data_type, data_list in batch_data.items():
+                if data_list:  # Only process non-empty lists
+                    df_data[data_type] = self._convert_to_dataframe(data_list)
+            
+            # Save to PostgreSQL and Neo4j
+            if df_data:
+                await self.postgres_handler.save_batch(df_data)
+                
+                # Save to Neo4j - convert to dicts first
+                for table_name, items in batch_data.items():
+                    if items:
+                        records = [item.model_dump() for item in items]
+                        await self.neo4j_handler.save_batch(table_name, records)
+                
+                # Log a simple summary
+                logger.warning(f"Saved: {', '.join(f'{k}={len(v)}' for k, v in batch_data.items())}")
+        except (DatabaseError, BatchError) as e:
+            raise DatabaseError(f"Failed to save batch: {str(e)}")
+        except Exception as e:
+            raise DatabaseError(f"Unexpected error saving batch: {str(e)}")
 
     async def generate_all(self):
         """Generate all data types and persist them."""
@@ -127,70 +127,88 @@ class DataGenerator:
         institution_subsidiary_batch = defaultdict(list)
         current_batch_size = 0
         
+        # Progress tracking
+        total_entities = 0
+        total_subsidiaries = 0
+        
+        logger.warning(f"Starting data generation for {num_institutions} institutions")
+        
         # Generate institutions and subsidiaries
-        async with ProgressTracker(num_institutions, "Generating Institutions") as inst_progress:
-            async for institution in self.institution_gen.generate():
-                # Create entity record for institution
-                institution_entity = Entity(
-                    entity_id=institution.institution_id,
-                    entity_type='institution',
-                    parent_entity_id=None,
-                    created_at=datetime.now(),
-                    updated_at=datetime.now(),
-                    deleted_at=None
-                )
-                institution_subsidiary_batch['entities'].append(institution_entity)
-                institution_subsidiary_batch['institutions'].append(institution)
-                current_batch_size += 1
+        institution_count = 0
+        async for institution in self.institution_gen.generate():
+            institution_count += 1
+            # Create entity record for institution
+            institution_entity = Entity(
+                entity_id=institution.institution_id,
+                entity_type='institution',
+                parent_entity_id=None,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                deleted_at=None
+            )
+            institution_subsidiary_batch['entities'].append(institution_entity)
+            institution_subsidiary_batch['institutions'].append(institution)
+            current_batch_size += 1
+            total_entities += 1
+            
+            # Generate subsidiaries for this institution
+            num_subsidiaries = random.randint(
+                self.config.get('min_subsidiaries_per_institution', 1),
+                self.config.get('max_subsidiaries_per_institution', 5)
+            )
+            
+            subsidiary_count = 0
+            async for subsidiary in self.subsidiary_gen.generate(institution.institution_id):
+                if len(institution_subsidiary_batch['subsidiaries']) < num_subsidiaries:
+                    subsidiary_count += 1
+                    # Create entity record for subsidiary
+                    subsidiary_entity = Entity(
+                        entity_id=subsidiary.subsidiary_id,
+                        entity_type='subsidiary',
+                        parent_entity_id=institution.institution_id,
+                        created_at=datetime.now(),
+                        updated_at=datetime.now(),
+                        deleted_at=None
+                    )
+                    institution_subsidiary_batch['entities'].append(subsidiary_entity)
+                    institution_subsidiary_batch['subsidiaries'].append(subsidiary)
+                    current_batch_size += 1
+                    total_entities += 1
+                    total_subsidiaries += 1
+                else:
+                    break
+            
+            # Show progress for this institution
+            logger.warning(f"[{institution_count}/{num_institutions}] Generated institution with {subsidiary_count} subsidiaries")
+            
+            # Process batch if size threshold reached
+            if current_batch_size >= institutions_batch_size:
+                # First persist the entities
+                entities_batch = {'entities': institution_subsidiary_batch['entities']}
+                await self.persist_batch(entities_batch)
+                logger.warning(f"Saved batch of {len(entities_batch['entities'])} entities")
                 
-                # Generate subsidiaries for this institution
-                num_subsidiaries = random.randint(
-                    self.config.get('min_subsidiaries_per_institution', 1),
-                    self.config.get('max_subsidiaries_per_institution', 5)
-                )
+                # Then persist institutions and subsidiaries
+                institutions_subsidiaries_batch = {
+                    'institutions': institution_subsidiary_batch['institutions'],
+                    'subsidiaries': institution_subsidiary_batch['subsidiaries']
+                }
+                await self.persist_batch(institutions_subsidiaries_batch)
+                logger.warning(f"Saved batch of {len(institutions_subsidiaries_batch['institutions'])} institutions and {len(institutions_subsidiaries_batch['subsidiaries'])} subsidiaries")
                 
-                async for subsidiary in self.subsidiary_gen.generate(institution.institution_id):
-                    if len(institution_subsidiary_batch['subsidiaries']) < num_subsidiaries:
-                        # Create entity record for subsidiary
-                        subsidiary_entity = Entity(
-                            entity_id=subsidiary.subsidiary_id,
-                            entity_type='subsidiary',
-                            parent_entity_id=institution.institution_id,
-                            created_at=datetime.now(),
-                            updated_at=datetime.now(),
-                            deleted_at=None
-                        )
-                        institution_subsidiary_batch['entities'].append(subsidiary_entity)
-                        institution_subsidiary_batch['subsidiaries'].append(subsidiary)
-                        current_batch_size += 1
-                    else:
-                        break
-                
-                await inst_progress.update(1)
-                
-                # Process batch if size threshold reached
-                if current_batch_size >= institutions_batch_size:
-                    # First persist the entities
-                    entities_batch = {'entities': institution_subsidiary_batch['entities']}
-                    await self.persist_batch(entities_batch)
-                    
-                    # Then persist institutions and subsidiaries
-                    institutions_subsidiaries_batch = {
-                        'institutions': institution_subsidiary_batch['institutions'],
-                        'subsidiaries': institution_subsidiary_batch['subsidiaries']
-                    }
-                    await self.persist_batch(institutions_subsidiaries_batch)
-                    
-                    # Finally generate and persist related data
-                    await self.generate_all_related_data(institution_subsidiary_batch)
-                    institution_subsidiary_batch = defaultdict(list)
-                    current_batch_size = 0
+                # Finally generate and persist related data
+                logger.warning(f"Generating related data for batch of {len(institution_subsidiary_batch['institutions'])} institutions...")
+                await self.generate_all_related_data(institution_subsidiary_batch)
+                institution_subsidiary_batch = defaultdict(list)
+                current_batch_size = 0
         
         # Process remaining batch
         if current_batch_size > 0:
+            logger.warning(f"Processing final batch...")
             # First persist the entities
             entities_batch = {'entities': institution_subsidiary_batch['entities']}
             await self.persist_batch(entities_batch)
+            logger.warning(f"Saved final batch of {len(entities_batch['entities'])} entities")
             
             # Then persist institutions and subsidiaries
             institutions_subsidiaries_batch = {
@@ -198,192 +216,79 @@ class DataGenerator:
                 'subsidiaries': institution_subsidiary_batch['subsidiaries']
             }
             await self.persist_batch(institutions_subsidiaries_batch)
+            logger.warning(f"Saved final batch of {len(institutions_subsidiaries_batch['institutions'])} institutions and {len(institutions_subsidiaries_batch['subsidiaries'])} subsidiaries")
             
             # Finally generate and persist related data
+            logger.warning(f"Generating related data for final batch...")
             await self.generate_all_related_data(institution_subsidiary_batch)
+            
+        logger.warning(f"Completed: Generated {total_entities} total entities ({num_institutions} institutions, {total_subsidiaries} subsidiaries)")
 
     async def generate_all_related_data(self, institution_subsidiary_batch):
         """Generate and persist all entity-related data."""
-        entity_related_data = defaultdict(list)
+        logger.warning("Generating related data...")
 
         # Process each institution
         for institution in institution_subsidiary_batch['institutions']:
-            # Generate addresses for institution
-            address = await self.address_gen.generate(institution.institution_id, 'institution').__anext__()
-            entity_related_data['addresses'].append(address)
-            
             # Generate beneficial owners for institution
-            num_owners = random.randint(1, self.config.get('max_beneficial_owners_per_institution', 2))
-            async with ProgressTracker(num_owners, "Generating Beneficial Owners") as bo_progress:
-                for _ in range(num_owners):
-                    owner = await self.beneficial_owner_gen.generate(institution.institution_id, 'institution').__anext__()
-                    entity_related_data['beneficial_owners'].append(owner)
-                    await bo_progress.update(1)
+            num_owners = random.randint(1, self.config.get('max_beneficial_owners_per_institution', 3))
+            logger.warning(f"Generating {num_owners} beneficial owners for institution {institution.institution_id}")
+            beneficial_owners = []
+            for _ in range(num_owners):
+                owner = await self.beneficial_owner_gen.generate(institution.institution_id, 'institution').__anext__()
+                beneficial_owners.append(owner)
             
-            # Generate accounts and their transactions for institution
+            # Save beneficial owners
+            if beneficial_owners:
+                await self.persist_batch({'beneficial_owners': beneficial_owners})
+                logger.warning(f"Saved {len(beneficial_owners)} beneficial owners")
+            
+            # Generate accounts for institution
             num_accounts = random.randint(1, self.config.get('max_accounts_per_institution', 3))
-            account_batch = []
+            logger.warning(f"Generating {num_accounts} accounts for institution {institution.institution_id}")
+            accounts = []
             for _ in range(num_accounts):
                 account = await self.account_gen.generate(institution.institution_id, 'institution').__anext__()
-                account_batch.append(account)
-                
+                accounts.append(account)
+            
             # Save accounts first
-            if account_batch:
-                await self.persist_batch({'accounts': account_batch})
+            if accounts:
+                await self.persist_batch({'accounts': accounts})
+                logger.warning(f"Saved {len(accounts)} accounts")
                 
             # Now generate and save transactions for each account
-            for account in account_batch:
+            for account in accounts:
                 # Generate transactions for this account
                 num_transactions = random.randint(
                     self.config.get('min_transactions_per_account', 5),
-                    self.config.get('max_transactions_per_account', 20)
+                    self.config.get('max_transactions_per_account', 10)
                 )
-                async with ProgressTracker(num_transactions, "Generating Transactions") as tx_progress:
-                    transaction_batch = []
-                    for _ in range(num_transactions):
-                        transaction = await self.transaction_gen.generate(account).__anext__()
-                        transaction_batch.append(transaction)
-                        await tx_progress.update(1)
-                        
-                        # Persist transactions in smaller batches
-                        if len(transaction_batch) >= 10:  # Smaller batch size for transactions
-                            await self.persist_batch({'transactions': transaction_batch})
-                            transaction_batch = []
-                            
-                    # Persist any remaining transactions
-                    if transaction_batch:
-                        await self.persist_batch({'transactions': transaction_batch})
+                
+                logger.warning(f"Generating {num_transactions} transactions for account {account.account_id}")
+                transactions = []
+                for _ in range(num_transactions):
+                    transaction = await self.transaction_gen.generate(account).__anext__()
+                    transactions.append(transaction)
+                
+                # Save transactions for this account
+                if transactions:
+                    await self.persist_batch({'transactions': transactions})
+                    logger.warning(f"Saved {len(transactions)} transactions")
             
             # Generate risk assessments for institution
             num_risk_assessments = random.randint(1, self.config.get('max_risk_assessments_per_institution', 2))
-            async with ProgressTracker(num_risk_assessments, "Generating Risk Assessments") as ra_progress:
-                for _ in range(num_risk_assessments):
-                    assessment = await self.risk_assessment_gen.generate(institution.institution_id, 'institution').__anext__()
-                    entity_related_data['risk_assessments'].append(assessment)
-                    await ra_progress.update(1)
+            logger.warning(f"Generating {num_risk_assessments} risk assessments for institution {institution.institution_id}")
+            risk_assessments = []
+            for _ in range(num_risk_assessments):
+                assessment = await self.risk_assessment_gen.generate(institution.institution_id, 'institution').__anext__()
+                risk_assessments.append(assessment)
             
-            # Generate compliance events for institution
-            num_events = random.randint(1, self.config.get('max_compliance_events_per_institution', 3))
-            async with ProgressTracker(num_events, "Generating Compliance Events") as ce_progress:
-                for _ in range(num_events):
-                    event = await self.compliance_event_gen.generate(institution.institution_id, 'institution').__anext__()
-                    entity_related_data['compliance_events'].append(event)
-                    await ce_progress.update(1)
+            # Save risk assessments
+            if risk_assessments:
+                await self.persist_batch({'risk_assessments': risk_assessments})
+                logger.warning(f"Saved {len(risk_assessments)} risk assessments")
             
-            # Generate authorized persons for institution
-            num_auth_persons = random.randint(1, self.config.get('max_authorized_persons_per_institution', 3))
-            async with ProgressTracker(num_auth_persons, "Generating Authorized Persons") as ap_progress:
-                for _ in range(num_auth_persons):
-                    auth_person = await self.authorized_person_gen.generate(institution.institution_id, 'institution').__anext__()
-                    entity_related_data['authorized_persons'].append(auth_person)
-                    await ap_progress.update(1)
-            
-            # Generate documents for institution
-            num_documents = random.randint(1, self.config.get('max_documents_per_institution', 5))
-            async with ProgressTracker(num_documents, "Generating Documents") as doc_progress:
-                for _ in range(num_documents):
-                    document = await self.document_gen.generate(institution.institution_id, 'institution').__anext__()
-                    entity_related_data['documents'].append(document)
-                    await doc_progress.update(1)
-            
-            # Generate jurisdiction presences for institution
-            num_jurisdictions = random.randint(1, self.config.get('max_jurisdictions_per_institution', 3))
-            async with ProgressTracker(num_jurisdictions, "Generating Jurisdiction Presences") as jp_progress:
-                for _ in range(num_jurisdictions):
-                    presence = await self.jurisdiction_presence_gen.generate(institution.institution_id, 'institution').__anext__()
-                    entity_related_data['jurisdiction_presences'].append(presence)
-                    await jp_progress.update(1)
-
-        # Process each subsidiary
-        for subsidiary in institution_subsidiary_batch['subsidiaries']:
-            # Generate address for subsidiary
-            subsidiary_address = await self.address_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
-            entity_related_data['addresses'].append(subsidiary_address)
-            
-            # Generate beneficial owners for subsidiary
-            num_sub_owners = random.randint(1, self.config.get('max_beneficial_owners_per_subsidiary', 2))
-            async with ProgressTracker(num_sub_owners, "Generating Beneficial Owners") as bo_progress:
-                for _ in range(num_sub_owners):
-                    sub_owner = await self.beneficial_owner_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
-                    entity_related_data['beneficial_owners'].append(sub_owner)
-                    await bo_progress.update(1)
-            
-            # Generate accounts and transactions for subsidiary
-            num_sub_accounts = random.randint(1, self.config.get('max_accounts_per_subsidiary', 2))
-            sub_account_batch = []
-            for _ in range(num_sub_accounts):
-                sub_account = await self.account_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
-                sub_account_batch.append(sub_account)
-                
-            # Save accounts first
-            if sub_account_batch:
-                await self.persist_batch({'accounts': sub_account_batch})
-                
-            # Now generate and save transactions for each account
-            for account in sub_account_batch:
-                # Generate transactions for subsidiary account
-                num_sub_transactions = random.randint(
-                    self.config.get('min_transactions_per_account', 5),
-                    self.config.get('max_transactions_per_account', 20)
-                )
-                async with ProgressTracker(num_sub_transactions, "Generating Transactions") as tx_progress:
-                    transaction_batch = []
-                    for _ in range(num_sub_transactions):
-                        transaction = await self.transaction_gen.generate(account).__anext__()
-                        transaction_batch.append(transaction)
-                        await tx_progress.update(1)
-                        
-                        # Persist transactions in smaller batches
-                        if len(transaction_batch) >= 10:  # Smaller batch size for transactions
-                            await self.persist_batch({'transactions': transaction_batch})
-                            transaction_batch = []
-                            
-                    # Persist any remaining transactions
-                    if transaction_batch:
-                        await self.persist_batch({'transactions': transaction_batch})
-            
-            # Generate risk assessments for subsidiary
-            num_sub_risk_assessments = random.randint(1, self.config.get('max_risk_assessments_per_subsidiary', 2))
-            async with ProgressTracker(num_sub_risk_assessments, "Generating Risk Assessments") as ra_progress:
-                for _ in range(num_sub_risk_assessments):
-                    sub_assessment = await self.risk_assessment_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
-                    entity_related_data['risk_assessments'].append(sub_assessment)
-                    await ra_progress.update(1)
-            
-            # Generate compliance events for subsidiary
-            num_sub_events = random.randint(1, self.config.get('max_compliance_events_per_subsidiary', 2))
-            async with ProgressTracker(num_sub_events, "Generating Compliance Events") as ce_progress:
-                for _ in range(num_sub_events):
-                    sub_event = await self.compliance_event_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
-                    entity_related_data['compliance_events'].append(sub_event)
-                    await ce_progress.update(1)
-            
-            # Generate authorized persons for subsidiary
-            num_sub_auth_persons = random.randint(1, self.config.get('max_authorized_persons_per_subsidiary', 2))
-            async with ProgressTracker(num_sub_auth_persons, "Generating Authorized Persons") as ap_progress:
-                for _ in range(num_sub_auth_persons):
-                    sub_auth_person = await self.authorized_person_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
-                    entity_related_data['authorized_persons'].append(sub_auth_person)
-                    await ap_progress.update(1)
-            
-            # Generate documents for subsidiary
-            num_sub_documents = random.randint(1, self.config.get('max_documents_per_subsidiary', 3))
-            async with ProgressTracker(num_sub_documents, "Generating Documents") as doc_progress:
-                for _ in range(num_sub_documents):
-                    sub_document = await self.document_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
-                    entity_related_data['documents'].append(sub_document)
-                    await doc_progress.update(1)
-            
-            # Generate jurisdiction presences for subsidiary
-            num_sub_jurisdictions = random.randint(1, self.config.get('max_jurisdictions_per_subsidiary', 2))
-            async with ProgressTracker(num_sub_jurisdictions, "Generating Jurisdiction Presences") as jp_progress:
-                for _ in range(num_sub_jurisdictions):
-                    sub_presence = await self.jurisdiction_presence_gen.generate(subsidiary.subsidiary_id, 'subsidiary').__anext__()
-                    entity_related_data['jurisdiction_presences'].append(sub_presence)
-                    await jp_progress.update(1)
-
-        # Now persist all the entity-related data
-        await self.persist_batch(entity_related_data)
+        logger.warning("Completed generating related data")
 
 async def generate_test_data(config: Dict[str, Any], postgres_handler: PostgresHandler, neo4j_handler: Neo4jHandler):
     """

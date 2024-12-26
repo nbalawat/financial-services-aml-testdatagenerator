@@ -10,13 +10,15 @@ from aml_monitoring.database import PostgresHandler, Neo4jHandler
 
 # Configure simple logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Set default level to WARNING to reduce noise
     format='%(message)s'
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Keep main logger at INFO
 
 # Disable other loggers
-logging.getLogger('aml_monitoring').setLevel(logging.WARNING)
+for name in ['aml_monitoring', 'asyncio', 'neo4j']:
+    logging.getLogger(name).setLevel(logging.WARNING)
 
 def parse_args():
     # Set up argument parser
@@ -63,11 +65,6 @@ async def async_main():
     # Load environment variables
     load_dotenv(args.env_file)
 
-    # Set logging level
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.getLogger('aml_monitoring').setLevel(logging.DEBUG)
-
     generator = None
     try:
         # Configure database handlers
@@ -79,7 +76,6 @@ async def async_main():
             'password': os.getenv('POSTGRES_PASSWORD', 'aml_password')
         }
         
-        # Get Neo4j connection details
         neo4j_uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
         neo4j_user = os.getenv('NEO4J_USER', 'neo4j')
         neo4j_password = os.getenv('NEO4J_PASSWORD', 'password')
@@ -93,7 +89,7 @@ async def async_main():
             await neo4j_handler.initialize()
             await postgres_handler.wipe_clean()
             await neo4j_handler.wipe_clean()
-            logger.info("Cleanup completed")
+            logger.info("Done")
             return
 
         # Configure the data generator
@@ -113,24 +109,15 @@ async def async_main():
             }
         }
 
-        logger.info("Starting data generation with:")
-        logger.info(f"- {args.num_institutions} institutions")
-        logger.info(f"- Max {args.max_accounts} accounts per institution")
-        logger.info(f"- {args.min_transactions}-{args.max_transactions} transactions per account")
-
-        # Initialize the generator with database handlers
+        logger.info(f"Generating {args.num_institutions} institutions")
+        
         generator = DataGenerator(config, postgres_handler, neo4j_handler)
         await generator.initialize_db()
-
-        # Clean existing data
-        logger.info("Cleaning existing data...")
         await postgres_handler.wipe_clean()
         await neo4j_handler.wipe_clean()
-
-        logger.info("Generating data...")
         await generator.generate_all()
-
-        logger.info("Data generation completed")
+        
+        logger.info("Done")
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         raise
