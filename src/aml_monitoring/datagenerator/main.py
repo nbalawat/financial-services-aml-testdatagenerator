@@ -5,8 +5,9 @@ import argparse
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
-from aml_monitoring.data_generator import DataGenerator
-from aml_monitoring.database import PostgresHandler, Neo4jHandler
+from .data_generator import DataGenerator
+from .database.postgres import PostgresHandler
+from .database.neo4j import Neo4jHandler
 
 # Configure simple logging
 logging.basicConfig(

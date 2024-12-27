@@ -1,0 +1,14 @@
+tasks:
+  - name: gather_customer_information
+    description: Gather and analyze customer KYC information
+    agent: KYCAnalyst
+    
+  - name: perform_external_screening
+    description: Screen customer against external databases and watchlists
+    agent: ExternalScreener
+    depends_on: gather_customer_information
+    
+  - name: review_compliance_status
+    description: Review overall compliance status and make risk assessment
+    agent: ComplianceReviewer
+    depends_on: [gather_customer_information, perform_external_screening]

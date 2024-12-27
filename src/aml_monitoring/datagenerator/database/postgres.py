@@ -1008,6 +1008,69 @@ class PostgresHandler(DatabaseHandler):
         except Exception as e:
             raise DatabaseError(f"Error fetching data: {str(e)}")
 
+    async def execute_query(self, query: str) -> List[Dict[str, Any]]:
+        """
+        Execute a raw SQL query and return the results asynchronously.
+        
+        Args:
+            query: SQL query string
+            
+        Returns:
+            List of dictionaries containing query results
+            
+        Raises:
+            DatabaseError: If there's an error executing the query
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Execute the query
+                results = await conn.fetch(query)
+                
+                # Convert results to list of dictionaries
+                return [dict(row) for row in results]
+                
+        except Exception as e:
+            raise DatabaseError(f"Error executing query: {str(e)}")
+
+    def execute_query_sync(self, query: str) -> List[Dict[str, Any]]:
+        """
+        Synchronous wrapper for execute_query.
+        
+        Args:
+            query: SQL query string
+            
+        Returns:
+            List of dictionaries containing query results
+        """
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(self.execute_query(query))
+
+    async def execute_query_batch(self, queries: List[str]) -> List[List[Dict[str, Any]]]:
+        """
+        Execute multiple SQL queries in parallel and return their results.
+        
+        Args:
+            queries: List of SQL query strings
+            
+        Returns:
+            List of results for each query
+            
+        Raises:
+            DatabaseError: If there's an error executing any query
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Execute queries in parallel using asyncio.gather
+                tasks = [conn.fetch(query) for query in queries]
+                results = await asyncio.gather(*tasks)
+                
+                # Convert results to list of dictionaries
+                return [[dict(row) for row in result] for result in results]
+                
+        except Exception as e:
+            raise DatabaseError(f"Error executing batch queries: {str(e)}")
+
     def _log_operation(self, operation: str, details: Optional[Dict] = None):
         """Log database operations - disabled for cleaner output."""
         pass

@@ -1,0 +1,14 @@
+tasks:
+  - name: query_transaction_details
+    description: Query and analyze transaction details from database
+    agent: DatabaseAnalyst
+    
+  - name: analyze_network_connections
+    description: Analyze network connections and patterns
+    agent: NetworkAnalyst
+    depends_on: query_transaction_details
+    
+  - name: review_related_documents
+    description: Review associated documents and past investigations
+    agent: DocumentAnalyst
+    depends_on: query_transaction_details

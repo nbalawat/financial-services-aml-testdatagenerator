@@ -8,21 +8,22 @@ from datetime import datetime, timedelta
 import uuid
 from typing import Dict, Any
 
-from aml_monitoring.data_generator import DataGenerator
-from aml_monitoring.generators import (
+from .main import DataGenerator
+from .generators import (
     InstitutionGenerator, AddressGenerator, AccountGenerator,
     TransactionGenerator, BeneficialOwnerGenerator, RiskAssessmentGenerator,
     AuthorizedPersonGenerator, DocumentGenerator, JurisdictionPresenceGenerator,
     ComplianceEventGenerator, SubsidiaryGenerator
 )
-from aml_monitoring.models import (
+from .models import (
     Institution, Address, Account, Transaction,
     BusinessType, OperationalStatus, RiskRating, TransactionType,
     TransactionStatus, RiskAssessment, AuthorizedPerson, Document,
-    JurisdictionPresence, ComplianceEvent, ComplianceEventType, Subsidiary, Entity
+    JurisdictionPresence, ComplianceEvent, Subsidiary, Entity
 )
-from aml_monitoring.database.postgres import PostgresHandler
-from aml_monitoring.database.neo4j import Neo4jHandler
+from .database.postgres import PostgresHandler
+from .database.neo4j import Neo4jHandler
+from ..test_config import TestConfig, TestData
 
 @pytest.fixture
 def test_config() -> Dict[str, Any]:

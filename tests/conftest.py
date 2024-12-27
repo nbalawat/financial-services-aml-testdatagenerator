@@ -6,8 +6,8 @@ import pytest_asyncio
 import asyncio
 import pandas as pd
 from dotenv import load_dotenv
-from aml_monitoring.database.postgres import PostgresHandler
-from aml_monitoring.database.neo4j import Neo4jHandler
+from aml_monitoring.datagenerator.database.postgres import PostgresHandler
+from aml_monitoring.datagenerator.database.neo4j import Neo4jHandler
 from .test_config import TestConfig, TestData
 
 # Load test environment variables

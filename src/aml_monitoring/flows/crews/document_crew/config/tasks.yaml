@@ -1,0 +1,14 @@
+tasks:
+  - name: process_documents
+    description: Process and extract information from documents
+    agent: DocumentProcessor
+    
+  - name: analyze_content
+    description: Analyze document content and identify patterns
+    agent: ContentAnalyzer
+    depends_on: process_documents
+    
+  - name: validate_documents
+    description: Validate document authenticity and completeness
+    agent: DocumentValidator
+    depends_on: process_documents

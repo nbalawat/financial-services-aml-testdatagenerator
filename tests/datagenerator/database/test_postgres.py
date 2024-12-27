@@ -7,10 +7,11 @@ from datetime import datetime
 import uuid
 import asyncio
 from uuid import UUID
-from aml_monitoring.database.exceptions import (
-    ConnectionError, ValidationError, SchemaError, BatchError, DatabaseError, ValidationError
+
+from ..database.exceptions import (
+    ConnectionError, ValidationError, SchemaError, BatchError, DatabaseError
 )
-from aml_monitoring.database.postgres import PostgresHandler
+from ..database.postgres import PostgresHandler
 from .test_config import TestConfig, TestData
 
 @pytest.fixture

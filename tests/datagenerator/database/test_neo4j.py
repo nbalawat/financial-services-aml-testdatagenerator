@@ -7,11 +7,11 @@ from datetime import datetime
 from uuid import UUID
 import asyncio
 
-from aml_monitoring.database.exceptions import (
+from ..exceptions import (
     ConnectionError, ValidationError, SchemaError, BatchError
 )
-from aml_monitoring.database.neo4j import Neo4jHandler
-from .test_config import TestConfig, TestData
+from ..neo4j import Neo4jHandler
+from ...test_config import TestConfig, TestData
 
 class TestNeo4jHandler:
     """Test suite for Neo4j database handler."""

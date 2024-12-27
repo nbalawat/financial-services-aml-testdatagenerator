@@ -1,0 +1,14 @@
+tasks:
+  - name: analyze_alert
+    description: Analyze alert details and initial triage
+    agent: AlertAnalyst
+    
+  - name: analyze_behavior
+    description: Analyze customer behavior patterns related to the alert
+    agent: BehaviorAnalyst
+    depends_on: analyze_alert
+    
+  - name: manage_investigation
+    description: Coordinate investigation and manage case
+    agent: CaseManager
+    depends_on: [analyze_alert, analyze_behavior]

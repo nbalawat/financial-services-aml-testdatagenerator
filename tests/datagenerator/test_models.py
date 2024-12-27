@@ -4,10 +4,10 @@ import pytest
 from datetime import datetime
 from pydantic import ValidationError
 
-from aml_monitoring.models import (
+from aml_monitoring.datagenerator.models import (
     Institution, Transaction, Account, RiskAssessment,
     BusinessType, OperationalStatus, RiskRating, TransactionType,
-    TransactionStatus
+    TransactionStatus, Customer
 )
 
 class TestInstitution:
