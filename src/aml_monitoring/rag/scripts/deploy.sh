@@ -3,26 +3,6 @@
 # Exit on error
 set -e
 
-# Check if prerequisites are installed
-if [ ! -f "$(dirname "$0")/prerequisites.sh" ]; then
-    echo "Prerequisites script not found. Please ensure you're in the correct directory."
-    exit 1
-fi
-
-# Load environment variables
-if [ ! -f "../.env" ]; then
-    echo "Error: .env file not found"
-    echo "Please copy .env.example to .env and update the values"
-    exit 1
-fi
-source ../.env
-
-# Verify gcloud authentication
-if ! gcloud auth print-identity-token &>/dev/null; then
-    echo "Not authenticated with Google Cloud. Please run 'gcloud auth login' first."
-    exit 1
-fi
-
 # Set project and region
 echo "Configuring Google Cloud project..."
 gcloud config set project $PROJECT_ID

@@ -2,6 +2,7 @@
 resource "google_cloudbuild_trigger" "rag_trigger" {
   name        = "rag-build-trigger"
   description = "Trigger for RAG tool builds"
+  location    = var.region
   
   # GitHub repository configuration
   github {
@@ -11,13 +12,6 @@ resource "google_cloudbuild_trigger" "rag_trigger" {
     push {
       branch = "^main$"  # Trigger on main branch pushes
     }
-  }
-  
-  # Build configuration
-  source_to_build {
-    uri       = "https://github.com/${var.github_owner}/${var.github_repo}"
-    ref       = "refs/heads/main"
-    repo_type = "GITHUB"
   }
   
   # Include only relevant paths
@@ -35,20 +29,6 @@ resource "google_cloudbuild_trigger" "rag_trigger" {
     _TAG             = "latest"
     _PROJECT_ID      = var.project_id
     _TRIGGER_NAME    = "rag-build-trigger"
-  }
-}
-
-# GitHub connection configuration
-resource "google_cloudbuild_trigger_config" "github_config" {
-  name     = "github-connection"
-  location = var.region
-  
-  repository_event_config {
-    repository = "projects/${var.project_id}/locations/${var.region}/connections/github-connection"
-    
-    push {
-      branch = "^main$"
-    }
   }
 }
 

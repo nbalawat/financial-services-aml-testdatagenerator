@@ -11,7 +11,7 @@ terraform {
     }
   }
   backend "gcs" {
-    bucket = "your-terraform-state-bucket"
+    bucket = "agentic-experiments-446019-tfstate"
     prefix = "rag-application"
   }
 }
@@ -29,13 +29,9 @@ provider "google-beta" {
 # Enable required APIs
 resource "google_project_service" "required_apis" {
   for_each = toset([
-    "cloudresourcemanager.googleapis.com",
     "cloudbuild.googleapis.com",
-    "run.googleapis.com",
     "artifactregistry.googleapis.com",
-    "cloudfunctions.googleapis.com",
-    "pubsub.googleapis.com",
-    "sqladmin.googleapis.com",
+    "run.googleapis.com",
     "aiplatform.googleapis.com",
     "secretmanager.googleapis.com"
   ])
@@ -47,14 +43,7 @@ resource "google_project_service" "required_apis" {
   disable_on_destroy        = false
 }
 
-# Create service account
-resource "google_service_account" "rag_service_account" {
-  account_id   = "rag-service-account"
-  display_name = "RAG Application Service Account"
-  project      = var.project_id
-}
-
-# Grant necessary roles to service account
+# Grant necessary roles to service account (defined in service_accounts.tf)
 resource "google_project_iam_member" "service_account_roles" {
   for_each = toset([
     "roles/storage.objectViewer",
@@ -116,24 +105,25 @@ resource "google_sql_database_instance" "rag_db" {
   name             = "rag-db-instance"
   database_version = "POSTGRES_14"
   region           = var.region
+  project          = var.project_id
+  deletion_protection = false  # Set to false to allow Terraform to manage the instance lifecycle
   
   settings {
     tier = var.db_instance_tier
     
-    backup_configuration {
-      enabled = true
-    }
-    
     ip_configuration {
       ipv4_enabled = true
       authorized_networks {
-        name  = "allow-cloud-run"
-        value = "0.0.0.0/0"  # Consider restricting this in production
+        name  = "all"
+        value = "0.0.0.0/0"  # Note: This is not recommended for production
       }
     }
+    
+    backup_configuration {
+      enabled = true
+      point_in_time_recovery_enabled = true
+    }
   }
-  
-  deletion_protection = true
 }
 
 resource "google_sql_database" "rag_database" {

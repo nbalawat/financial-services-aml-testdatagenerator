@@ -51,13 +51,13 @@ variable "db_password" {
 variable "document_processor_image" {
   description = "The Docker image for the document processor service"
   type        = string
-  default     = "us-central1-docker.pkg.dev/${var.project_id}/rag-images/document-processor:latest"
+  default     = null  # Will be set in terraform.tfvars
 }
 
 variable "query_service_image" {
   description = "The Docker image for the query service"
   type        = string
-  default     = "us-central1-docker.pkg.dev/${var.project_id}/rag-images/query-service:latest"
+  default     = null  # Will be set in terraform.tfvars
 }
 
 variable "min_instances" {
