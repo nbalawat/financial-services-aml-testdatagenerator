@@ -1,0 +1,13 @@
+google-cloud-storage==2.13.0
+google-cloud-pubsub==2.18.4
+vertexai==0.0.1
+sqlalchemy==2.0.23
+pg8000==1.30.3
+functions-framework==3.4.0
+flask==3.0.0
+langchain==0.0.350
+numpy==1.26.2
+scipy==1.11.4
+pypdf==3.17.1
+docx2txt==0.8
+python-dotenv==1.0.0

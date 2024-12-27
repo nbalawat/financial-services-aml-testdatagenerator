@@ -1,0 +1,43 @@
+steps:
+  # Build document processor image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/document-processor:${_TAG}',
+      '-f', 'services/document_processor/Dockerfile',
+      './services/document_processor'
+    ]
+
+  # Push document processor image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push',
+      '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/document-processor:${_TAG}'
+    ]
+
+  # Build query service image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/query-service:${_TAG}',
+      '-f', 'services/query_service/Dockerfile',
+      './services/query_service'
+    ]
+
+  # Push query service image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push',
+      '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/query-service:${_TAG}'
+    ]
+
+substitutions:
+  _REGION: us-central1
+  _REPOSITORY: rag-images
+  _TAG: latest
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/document-processor:${_TAG}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/query-service:${_TAG}'
+
+timeout: 1800s

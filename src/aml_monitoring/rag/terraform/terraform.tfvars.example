@@ -1,0 +1,32 @@
+# Project settings
+project_id = "your-project-id"
+region     = "us-central1"
+zone       = "us-central1-a"
+
+# GitHub repository settings
+github_owner = "your-github-username"
+github_repo  = "your-repo-name"
+github_connection_id = "github-connection"  # From Cloud Build GitHub App connection
+github_installation_id = "your-installation-id"  # From GitHub App installation
+
+# Database settings
+db_instance_tier = "db-f1-micro"  # Use larger tier for production
+db_name          = "rag_db"
+db_user          = "rag_user"
+db_password      = "your-secure-password"
+
+# Service images (these will be automatically built by Cloud Build)
+# These default to Artifact Registry paths:
+# document_processor_image = "us-central1-docker.pkg.dev/your-project-id/rag-images/document-processor:latest"
+# query_service_image     = "us-central1-docker.pkg.dev/your-project-id/rag-images/query-service:latest"
+
+# Scaling settings
+min_instances = 1
+max_instances = 10
+
+# Environment
+environment = "dev"  # or "staging" or "prod"
+
+# Monitoring
+enable_monitoring = true
+enable_logging    = true
