@@ -4,3 +4,5 @@ data
 .vscode
 .env
 test_data
+test.env
+.env
