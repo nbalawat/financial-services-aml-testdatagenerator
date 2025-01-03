@@ -46,6 +46,7 @@ python -m aml_monitoring.datagenerator.main \
 ## Configuration
 
 The application uses environment variables for database configuration. Create a `.env` file with:
+see the docker-compose file in config folder
 
 ```env
 POSTGRES_HOST=localhost
@@ -57,6 +58,75 @@ POSTGRES_PASSWORD=your_password
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_password
+```
+
+## Docker Setup
+
+The project uses Docker Compose to set up the required database infrastructure. The following services are included:
+- PostgreSQL (15.0)
+- pgAdmin4 (for PostgreSQL monitoring)
+- Neo4j (5.0) with APOC plugins
+
+### Starting the Services
+
+1. Navigate to the config directory:
+```bash
+cd config
+```
+
+2. Start all services:
+```bash
+docker-compose up -d
+```
+
+### Accessing Database Management Tools
+
+#### PostgreSQL (pgAdmin4)
+- URL: http://localhost:5050
+- Login credentials:
+  - Email: admin@admin.com
+  - Password: admin
+- To connect to PostgreSQL server:
+  - Host: postgres
+  - Port: 5432
+  - Database: aml_monitoring
+  - Username: aml_user
+  - Password: aml_password
+
+#### Neo4j Browser
+- URL: http://localhost:7474
+- Connection URL: bolt://localhost:7687
+- Default credentials:
+  - Username: neo4j
+  - Password: aml_password
+
+### Monitoring Services
+
+#### PostgreSQL Status
+Check if PostgreSQL is healthy:
+```bash
+docker exec aml_postgres pg_isready -U aml_user -d aml_monitoring
+```
+
+View PostgreSQL logs:
+```bash
+docker logs aml_postgres
+```
+
+#### Neo4j Status
+View Neo4j logs:
+```bash
+docker logs aml_neo4j
+```
+
+### Stopping Services
+```bash
+docker-compose down
+```
+
+To remove all data volumes:
+```bash
+docker-compose down -v
 ```
 
 ## Development
@@ -77,4 +147,3 @@ pip install -e .
 Run tests using pytest:
 ```bash
 pytest
-```
