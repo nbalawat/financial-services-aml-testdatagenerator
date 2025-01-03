@@ -7,3 +7,4 @@ sqlalchemy>=2.0.0
 psycopg2-binary
 neo4j
 python-dotenv
+asyncpg==0.30.0

@@ -1,6 +1,0 @@
-pandas
-sqlalchemy
-neo4j
-python-dotenv
-pydantic
-faker

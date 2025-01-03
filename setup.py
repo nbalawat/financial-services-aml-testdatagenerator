@@ -6,12 +6,16 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
-        "pandas",
-        "sqlalchemy",
+        "faker==20.1.0",
+        "pandas==2.1.3",
+        "numpy==1.26.2",
+        "python-dateutil==2.8.2",
+        "pydantic==2.5.2",
+        "sqlalchemy>=2.0.0",
+        "psycopg2-binary",
         "neo4j",
         "python-dotenv",
-        "pydantic",
-        "faker"
+        "asyncpg==0.30.0"
     ],
     python_requires=">=3.8",
     author="Your Name",
